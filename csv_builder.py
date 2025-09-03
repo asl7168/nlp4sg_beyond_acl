@@ -1,3 +1,5 @@
+from paths import *
+
 from os.path import exists
 from os import makedirs, listdir
 import pandas as pd
@@ -7,16 +9,6 @@ import ijson
 import json
 from multiprocessing import Pool
 from ast import literal_eval
-
-# NOTE: while functions provide the option to provide custom filepaths, we recommend changing
-# ONLY corpora_path -- all other predefinted paths rely on it, and custom filepaths are untested
-
-corpora_path = "/projects/b1170/corpora/comp_ling_meta"
-datasets_path = f"{corpora_path}/datasets"
-csvs_path = f"{datasets_path}/csvs"
-
-sub_a = f"{corpora_path}/subcorpus_a"
-sub_c = f"{corpora_path}/subcorpus_c"
 
 csv_columns = ["title", "corpus_id", "openalex_id", "author_ids", "venue", "is_acl", "is_nlp", 
                "max_acl_contribs", "openalex_path", "s2orc_path"]

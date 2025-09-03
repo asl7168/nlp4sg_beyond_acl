@@ -1,7 +1,8 @@
+from paths import *
 from credentials import headers
-from os.path import exists, isdir, isfile
-from os import mkdir, makedirs, replace, listdir, rename
-from os import remove as os_remove
+
+from os.path import exists
+from os import mkdir, makedirs
 import requests
 from tqdm import tqdm 
 from urllib.request import urlretrieve as urlretrieve
@@ -11,102 +12,73 @@ from shutil import copyfileobj
 from cprint import cprint 
 import ijson
 import json
-import jsonlines
 from re import compile, sub as re_sub
 from unicodedata import normalize
-from math import ceil
 from ast import literal_eval
 
-# NOTE: while functions provide the option to provide custom filepaths, we recommend changing
-# ONLY corpora_path -- all other predefinted paths rely on it, and custom filepaths are untested
-
-corpora_path = "/projects/b1170/corpora/comp_ling_meta"
-datasets_path = f"{corpora_path}/datasets"
-s2orc_path = f"{datasets_path}/s2orc"
-s2_papers_db_path = f"{datasets_path}/s2_papers"
-
-sub_a = f"{corpora_path}/subcorpus_a"
-# sub_a_s2 = f"{sub_a}/s2"
-# sub_a_oa = f"{sub_a}/open_alex"
-
-sub_b = f"{corpora_path}/subcorpus_b"
-# sub_b_s2 = f"{sub_b}/s2"
-# sub_b_oa = f"{sub_b}/open_alex"
-
-sub_c = f"{corpora_path}/subcorpus_c"
-# sub_c_s2 = f"{sub_c}/s2"
-# sub_c_oa = f"{sub_c}/open_alex"
-
-# papers_path = f"{s2_path}/papers"
-# relevant_path = f"{papers_path}/relevant"
-# acl_papers_path = f"{s2_path}/papers/acl"
-# acl_authors_path = f"{acl_papers_path}/authors"
-# over_three_path = f"{acl_authors_path}/over_three"
-# acl_s2_path = f"{acl_papers_path}/s2"
-# acl_openalex_path = f"{acl_papers_path}/open_alex"
-
-def download_s2orc(s2orc_dst: str = s2orc_path):
-    """Downloads and gunzips s2orc from Semantic Scholar
+def download_s2orc():
+    """Downloads and gunzips s2orc JSONL files from Semantic Scholar
 
     Parameters
     ----------
-        s2orc_dst (str): path in which to save s2orc files
+        None
     
     Returns
     ----------
         None
     """
-    if not exists(s2orc_dst): mkdir(s2orc_dst)
+    if not exists(s2orc_path): mkdir(s2orc_path)
 
     s2orc = "https://api.semanticscholar.org/datasets/v1/release/latest/dataset/s2orc"
     db_files = requests.get(s2orc, headers=headers).json()["files"]
     for i in tqdm(range(len(db_files)), desc="Downloading s2orc"):
-        urlretrieve(db_files[i], f"{s2orc_dst}/s2orc-{i}.jsonl.gz")
+        urlretrieve(db_files[i], f"{s2orc_path}/s2orc-{i}.jsonl.gz")
 
-    for f in tqdm(glob.glob(f"{s2orc_dst}/*.gz"), desc="gunzipping"):           
+    for f in tqdm(glob.glob(f"{s2orc_path}/*.gz"), desc="gunzipping"):           
         with gunzip(f, "rb") as f_in:
             with open(f[:-3], "wb") as f_out:
                 copyfileobj(f_in, f_out)
 
 
-def download_s2_papers(s2_papers_dst: str = s2_papers_db_path):
-    """Downloads and gunzips s2orc from Semantic Scholar
+def download_s2_papers():
+    """Downloads and gunzips the Semantic Scholar 'Papers' JSONL files
 
     Parameters
     ----------
-        s2orc_dst (str): path in which to save s2orc files
+        None
     
     Returns
     ----------
         None
     """
-    if not exists(s2_papers_dst): mkdir(s2_papers_dst)
+    if not exists(s2_papers_db_path): mkdir(s2_papers_db_path)
 
     s2_papers = "https://api.semanticscholar.org/datasets/v1/release/latest/dataset/papers"
     db_files = requests.get(s2_papers, headers=headers).json()["files"]
     for i in tqdm(range(len(db_files)), desc="Downloading Papers"): 
-        if not exists(f"{s2_papers_dst}/papers-{i}.jsonl.gz"):
-            urlretrieve(db_files[i], f"{s2_papers_dst}/papers-{i}.jsonl.gz")
+        if not exists(f"{s2_papers_db_path}/papers-{i}.jsonl.gz"):
+            urlretrieve(db_files[i], f"{s2_papers_db_path}/papers-{i}.jsonl.gz")
 
-    for f in tqdm(glob.glob(f"{s2_papers_dst}/*.gz"), desc="gunzipping"):           
+    for f in tqdm(glob.glob(f"{s2_papers_db_path}/*.gz"), desc="gunzipping"):           
         with gunzip(f, "rb") as f_in:
             with open(f[:-3], "wb") as f_out:
                 copyfileobj(f_in, f_out)
 
 
-def extract_from_s2orc(only_acl: bool = False, s2orc_path: str = s2orc_path, acl_dst: str = sub_a, 
-                       other_dst: str = sub_c, corpusids_dst: str = datasets_path, start: int = 0,
-                       end: int = 30):
-    """Find all papers in s2orc, creating subdirectories for future organization; and storing ACL 
-    corpusIds in one file and non-ACL corpusIDs in another
+def extract_from_s2orc(start: int = 0, end: int = 30):
+    """Using the downloaded s2orc dataset, extract individual paper JSON files and organize
+    based on whether that paper was published at ACL.
+
+    Files are stored in their own directories named for their CorpusID. These directories
+    will, later, additionally contain a paper's metadata from the Papers dataset, and 
+    from OpenAlex. Paper directories are stored, naively, within a directory named for its
+    contents' first four CorpusID digits.
+    
+    This function additionally creates two txt files that store all ACL and non-ACL 
+    CorpusIDs for future use.
 
     Parameters
     ----------
-        only_acl (bool): whether to extract only ACL files from s2orc
-        s2orc_path (str): path to s2orc JSONL downloads
-        acl_dst (str): path where ACL organization subdirs will be made
-        other_dst (str): path where non-ACL organization subdirs will be made
-        corpusids_dst (str): where to store files containing ACL and non-ACL corpusIds
         start (int): which s2orc file to start at (for job segmentation)
         end (int): which s2orc file to end at
     
@@ -114,9 +86,9 @@ def extract_from_s2orc(only_acl: bool = False, s2orc_path: str = s2orc_path, acl
     ----------
         None
     """
-    if not exists(s2orc_path): raise LookupError("path to extracted s2orc JSONL files is invalid")
+    if not exists(s2orc_path): raise LookupError("path to s2orc JSONL files is invalid")
 
-    for dir in [acl_dst, other_dst]:
+    for dir in [sub_a, sub_c]:  # ACL and non-ACL directories
         if not exists(dir): mkdir(dir)
 
     s2orc_jsonls = tqdm(range(start, end))
@@ -125,56 +97,41 @@ def extract_from_s2orc(only_acl: bool = False, s2orc_path: str = s2orc_path, acl
 
         with open(curr_jsonl) as f:
             with tqdm(total=366000) as pbar:  # ~366k papers per JSONL
-                while True:
+                while True:  # loop through every JSON in the JSONL
                     curr_corpusid = ""
                     curr_is_acl = False 
 
-                    l = f.readline()
+                    l = f.readline()  # each l is a JSON file
                     if not l: break
 
                     parser = ijson.parse(l)
                     for prefix, event, value in parser:
-                        if prefix == "corpusid":  # store the corpusid
+                        if prefix == "corpusid":  # store the CorpusID
                             curr_corpusid = str(value)
                             continue
                         elif prefix == "externalids.acl":  # check if ACL
                             curr_is_acl = True if value else False
-                            break  # don't care about anything after this, so break
+                            break  # no further prefixes are (currently) relevant
                         else:
                             continue
                     
-                    # to improve future efficiency, store s2(orc) files in subdirs named for 
-                    # the first four digits of a corpusId
+                    # store files in subdirs named for the first four digits of a CorpusID
                     subdir_name = curr_corpusid[:4] 
 
-                    if curr_is_acl:
-                        subdir = f"{acl_dst}/{subdir_name}"
-                        paper_dir = f"{subdir}/{curr_corpusid}"
-                        s2orc_file = f"{paper_dir}/s2orc-{curr_corpusid}.json"
-                        if not exists(s2orc_file):
-                            makedirs(paper_dir, exist_ok=True)
-                            j = json.loads(l)
-                            with open(s2orc_file, 'w') as sf:
-                                json.dump(j, sf, indent=4)
-                            tqdm.write(f"created file at {s2orc_file}")
+                    subdir = f"{sub_a if curr_is_acl else sub_c}/{subdir_name}"
+                    paper_dir = f"{subdir}/{curr_corpusid}"
+                    s2orc_file = f"{paper_dir}/s2orc-{curr_corpusid}.json"
 
-                            # with open(f"{corpusids_dst}/acl_corpusids.txt", 'a') as cf:
-                            #     cf.write(f"{curr_corpusid}\n")
-                            
-                    else:
-                        if not only_acl:  # only save non-ACL if only_ACL == False
-                            subdir = f"{other_dst}/{subdir_name}"
-                            paper_dir = f"{subdir}/{curr_corpusid}"
-                            s2orc_file = f"{paper_dir}/s2orc-{curr_corpusid}.json"
-                            if not exists(s2orc_file):
-                                makedirs(paper_dir, exist_ok=True)
-                                j = json.loads(l)
-                                with open(s2orc_file, 'w') as sf:
-                                    json.dump(j, sf, indent=4)
-                                tqdm.write(f"created file at {s2orc_file}")
+                    if not exists(s2orc_file):
+                        makedirs(paper_dir, exist_ok=True)
+                        
+                        j = json.loads(l)
+                        with open(s2orc_file, 'w') as sf:
+                            json.dump(j, sf, indent=4)
+                        tqdm.write(f"created file at {s2orc_file}")
 
-                                # with open(f"{corpusids_dst}/non_acl_corpusids.txt", 'a') as cf:
-                                #     cf.write(f"{curr_corpusid}\n")
+                        with open(f"{datasets_path}/{'' if curr_is_acl else 'non_'}acl_corpusids.txt", 'a') as cf:
+                            cf.write(f"{curr_corpusid}\n")
 
                     pbar.update(1)
                     
