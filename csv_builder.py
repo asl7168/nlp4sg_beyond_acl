@@ -1,0 +1,157 @@
+from os.path import exists
+from os import makedirs, listdir
+import pandas as pd
+from tqdm import tqdm 
+import glob
+import ijson
+import json
+from multiprocessing import Pool
+from ast import literal_eval
+
+# NOTE: while functions provide the option to provide custom filepaths, we recommend changing
+# ONLY corpora_path -- all other predefinted paths rely on it, and custom filepaths are untested
+
+corpora_path = "/projects/b1170/corpora/comp_ling_meta"
+datasets_path = f"{corpora_path}/datasets"
+csvs_path = f"{datasets_path}/csvs"
+
+sub_a = f"{corpora_path}/subcorpus_a"
+sub_c = f"{corpora_path}/subcorpus_c"
+
+csv_columns = ["title", "corpus_id", "openalex_id", "author_ids", "venue", "is_acl", "is_nlp", 
+               "max_acl_contribs", "openalex_path", "s2orc_path"]
+
+
+def csv_builder(csvs_path: str = csvs_path, # acl_src: str = sub_a, other_src: str = sub_c,
+                datasets_path: str = datasets_path, 
+                concepts: set = {'C204321447', 'C41895202', 'C23123220', 'C203005215', 
+                                 'C119857082', 'C186644900', 'C28490314', 'C2777530160', 
+                                 'C137293760'}, 
+                threshold: float = 0.0, start: int = 0, end: int = 10000, batch_size: int = 1000):
+    """
+    """
+    if threshold < 0 or threshold > 1: 
+        raise ValueError(f"threshold (= {threshold}) must be between 0.0 and 1.0")
+
+    if not exists(csvs_path): makedirs(csvs_path)
+
+    df = pd.DataFrame(columns=csv_columns)
+
+    # TODO: make an author CSV which has this info + other author info; e.g. load the author CSV here
+    # TODO: try this with authors_copy.csv because it will probably use less memory
+    tqdm.write('Loading authors df...')
+    author_df = pd.read_csv(f"{csvs_path}/authors_copy.csv", 
+                            usecols=['AuthorID', 'acl_papers', 'non_acl_papers'],      
+                            index_col='AuthorID')
+    author_df.sort_index(inplace=True)
+    tqdm.write('Loaded author CSV!')
+
+    author_acl_contribs = {}  # save time opening an author file every single time seen by keeping a dict
+
+    subdirs = tqdm([str(x) for x in range(start, end)], leave=False)
+    
+    with open(f"{datasets_path}/openalex_paths.txt") as f:
+        openalex_paths = {l.strip() for l in tqdm(f, desc='loading openalex paths')}
+        openalex_works_dict = {}
+        for path in tqdm(openalex_paths,desc='sorting openalex paths'):
+            subdir = path.split('/')[-3]
+            if subdir in openalex_works_dict:
+                openalex_works_dict[subdir].append(path)
+            else:
+                openalex_works_dict[subdir] = [path]
+        del openalex_paths
+
+    for subdir in subdirs:
+        subdirs.set_description(f"Looping through {subdir}/ in all subcorpuses")
+        batch = []
+        
+        if subdir not in openalex_works_dict: continue
+        
+        works = openalex_works_dict[subdir]
+        num_works = 0
+        if exists(f"{sub_a}/{subdir}/"): num_works += len(listdir(f"{sub_a}/{subdir}/"))
+        if exists(f"{sub_c}/{subdir}/"): num_works += len(listdir(f"{sub_c}/{subdir}/"))
+
+        pbar = tqdm(total=num_works, leave=False)
+
+        for work in works:
+            pbar.set_description(f"Extracting from {work}")
+            work_row = {"openalex_path": work, "openalex_id": work.split("/")[-1].split(".")[0],
+                        "author_ids": [], "max_acl_contribs": 0, "is_nlp": False}
+            with open(work) as w:
+                parser = ijson.parse(w)
+                last_concept = None
+                
+                for prefix, event, value in parser:
+                    match prefix:
+                        case "isACL": 
+                            work_row["is_acl"] = value
+                        case "corpusId": 
+                            work_row["corpus_id"] = value 
+                            work_row["s2orc_path"] = "/".join(work.split("/")[:-1]) + f"/s2orc-{value}.json"
+                        case "title": 
+                            work_row["title"] = value
+                        case "primary_location.source.display_name":  # most likely the actual venue
+                            work_row["venue"] = value
+                        case "authorships.item.author.id":
+                            author_id = value.split("/")[-1]
+                            work_row["author_ids"].append(author_id)
+
+                            acl_contribs = len(literal_eval(author_df.loc[int(author_id[1:])]['acl_papers']))
+                            work_row["max_acl_contribs"] = max(work_row["max_acl_contribs"], acl_contribs)
+                        case "concepts.item.id": 
+                            if not work_row["is_nlp"]:
+                                last_concept = value.split("/")[-1]
+                        case "concepts.item.score":
+                            if not work_row["is_nlp"] and last_concept in concepts and value > threshold: 
+                                work_row["is_nlp"] = True
+                        case "locations_count":
+                            break
+            
+            pbar.update(1)
+            batch.append(work_row)
+            if len(batch) >= batch_size:
+                df = pd.concat([df, pd.DataFrame(batch)], ignore_index=True)
+                batch = []
+
+        df = pd.concat([df, pd.DataFrame(batch)], ignore_index=True)
+
+    if start > 0 or end < 10000:
+        df.to_csv(f"{csvs_path}/papers_subcsv_{start}-{end}.csv")
+    else:
+        df.to_csv(f"{csvs_path}/papers.csv")
+
+
+def merge_csvs(csvs_path: str = csvs_path):
+    merged_csv = pd.DataFrame(columns=csv_columns)
+    for csv in glob.iglob(f"{csvs_path}/papers_sub*"):  # should constituent CSVs be deleted after merging?
+        df = pd.read_csv(csv)
+        merged_csv = pd.concat([merged_csv, df], ignore_index=True)
+
+    merged_csv.to_csv(f"{csvs_path}/papers_merged.csv")
+
+def process_author_file(path):
+    with open(path) as f:
+        j = json.load(f)
+    id_string = path.split('/')[-1].split('.')[0]
+    return {'AuthorID': int(id_string[1:]),
+            'acl_papers': [int(id) for id in j['acl_papers']],
+            'non_acl_papers': [int(id) for id in j['non_acl_papers']]}
+
+def make_author_csv(csvs_path: str = csvs_path, authors_path: str = f"{corpora_path}/authors2"):
+    author_columns = ['AuthorID', 'acl_papers', 'non_acl_papers']
+    csv_path = f"{csvs_path}/authors.csv"
+
+    author_files = glob.glob(f"{authors_path}/*/*.json")
+    tqdm.write('Collected author paths')
+    with Pool() as pool:
+        results = pool.map(process_author_file, author_files)
+    
+    df = pd.DataFrame(results, columns=author_columns)
+    df.to_csv(csv_path)
+
+if __name__ == "__main__":
+    pass
+    # csv_builder()
+    csv_builder(start=1000, end=1100)
+    # merge_csvs()
