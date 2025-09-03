@@ -205,4 +205,3 @@ dependencies:
   - zstd=1.5.7=hbeecb71_2
   - pip:
       - c-print==1.0.1
-prefix: C:\Users\Adam\miniconda3\envs\nlp4sg
