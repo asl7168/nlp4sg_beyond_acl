@@ -1,5 +1,6 @@
 import pandas as pd
 import ast, swifter
+import json 
 
 def get_abstract_text(s2orc_path):
     try:

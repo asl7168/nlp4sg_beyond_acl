@@ -79,8 +79,8 @@ def extract_from_s2orc(start: int = 0, end: int = 30):
 
     Parameters
     ----------
-        start (int): which s2orc file to start at (for job segmentation)
-        end (int): which s2orc file to end at
+        start (int): which s2orc JSONL file to start at (for job segmentation)
+        end (int): which s2orc JSONL file to end at
     
     Returns
     ----------
@@ -91,18 +91,17 @@ def extract_from_s2orc(start: int = 0, end: int = 30):
     for dir in [sub_a, sub_c]:  # ACL and non-ACL directories
         if not exists(dir): mkdir(dir)
 
+    # TODO: could batching be added to this file?
+
     s2orc_jsonls = tqdm(range(start, end))
     for i in s2orc_jsonls:
         curr_jsonl = f"{s2orc_path}/s2orc-{i}.jsonl"
 
         with open(curr_jsonl) as f:
-            with tqdm(total=366000) as pbar:  # ~366k papers per JSONL
-                while True:  # loop through every JSON in the JSONL
+            with tqdm(total=366000, leave=False, desc=f"Looping through {curr_jsonl.split('/')[-1]}") as pbar:  # ~366k papers per JSONL
+                for l in f:  # loop through every JSON in the JSONL
                     curr_corpusid = ""
                     curr_is_acl = False 
-
-                    l = f.readline()  # each l is a JSON file
-                    if not l: break
 
                     parser = ijson.parse(l)
                     for prefix, event, value in parser:
@@ -115,6 +114,8 @@ def extract_from_s2orc(start: int = 0, end: int = 30):
                         else:
                             continue
                     
+                    if not curr_corpusid.strip(): continue
+
                     # store files in subdirs named for the first four digits of a CorpusID
                     subdir_name = curr_corpusid[:4] 
 
@@ -128,6 +129,7 @@ def extract_from_s2orc(start: int = 0, end: int = 30):
                         j = json.loads(l)
                         with open(s2orc_file, 'w') as sf:
                             json.dump(j, sf, indent=4)
+                        
                         tqdm.write(f"created file at {s2orc_file}")
 
                         with open(f"{datasets_path}/{'' if curr_is_acl else 'non_'}acl_corpusids.txt", 'a') as cf:
@@ -136,95 +138,98 @@ def extract_from_s2orc(start: int = 0, end: int = 30):
                     pbar.update(1)
                     
 
-def get_s2_info(s2_papers_db: str = s2_papers_db_path, acl_dst: str = sub_a, 
-                other_dst: str = sub_c, corpusids_src: str = datasets_path,
-                batch_size: int = 5000):
+def get_s2_info(batch_size: int = 5000, start: int = 0, end: int = 30):
     """For each paper in the Papers database, create {corpusId}.json (in either the ACL or non-ACL
     directory, as appropriate) containing Semantic Scholar info (e.g. corpusId, externalIds, etc.)
 
-    Used instead of DEPRECATED get_s2_info_api(), which queries SemanticScholar
-
     Parameters
     ----------
-        s2_papers_db (str): whether to extract only ACL files from s2orc
-        acl_dst (str): path in which to save {corpusId}.json files, where corpusId is from a \
-                       s2orc ACL file
-        other_dst (str): path in which to save {corpusId}.json files, where corpusId is from \
-                         a s2orc non-ACL file
-        corpusids_src (str): path in which files containing ACL and non-ACL corpusIds are stored
         batch_size (int): number of files to batch for writing
+        start (int): which Papers JSONL file to start at (for job segmentation)
+        end (int): which Papers JSONL file to end at
     
     Returns
     ----------
         None
     """
     
+    if not exists(s2_papers_db_path): raise LookupError("path to Papers JSONL files is invalid")
+
     acl_corpusids = set()
     other_corpusids = set()
 
-    # load corpusid sets from files
-    with open(f"{corpusids_src}/acl_corpusids.txt") as f:
+    # load ACL and non-ACL CorpusID sets from files; see L134
+    with open(f"{datasets_path}/acl_corpusids.txt") as f:
         for line in tqdm(f, total=80000):
             acl_corpusids.add(line.strip())
     
-    with open(f"{corpusids_src}/non_acl_corpusids.txt") as f:
+    with open(f"{datasets_path}/non_acl_corpusids.txt") as f:
         for line in tqdm(f, total=10000000):
             other_corpusids.add(line.strip())
 
-    batch = {}  # {/path/to/make/file/at/{corpusId}.json: papers_db_info}
+    
+    batch = {}  # from /path/to/make/file/at/{CorpusID}.json to paper metadata
+    batched_is_acl = {}  # from /path/...{CorpusID.json} to is_acl (True or False)
 
     def write_batch():
         for file_path in tqdm(batch, leave=False):
             tqdm.write(f'Writing file at {file_path}')
-            # with open(file_path, 'w') as f2:
-            #     json.dump(batch[file_path], f2, indent=4)
+            with open(file_path, 'w') as f2:
+                json.dump(batch[file_path], f2, indent=4)
         
+            if batched_is_acl[file_path]: acl_corpusids.remove(curr_corpusid)
+            else: other_corpusids.remove(curr_corpusid)
+
         batch.clear()
+        batched_is_acl.clear() 
 
+    papers_jsonls = tqdm(range(start, end))
 
-    corpusid_pattern = compile(r'"corpusid":(\d+),')
-    db_files = glob.glob(f"{s2_papers_db}/*.jsonl")
+    for i in tqdm(papers_jsonls):
+        curr_jsonl = f"{s2_papers_db_path}/papers-{i}.jsonl"
 
-    for db_file in tqdm(db_files):
-        with open(db_file) as f:
-            with tqdm(total=7300000, leave=False, 
-                      desc=f"Looping through {db_file.split('/')[-1]}") as pbar:
-                for line in f:
-                    match = corpusid_pattern.search(line)  # pull the corpusId from the curr line
+        with open(curr_jsonl) as f:
+            with tqdm(total=7300000, leave=False, desc=f"Looping through {curr_jsonl.split('/')[-1]}") as pbar:
+                for l in f:  # loop through every JSON in the JSONL
+                    curr_corpusid = ""
+                    curr_is_acl = False 
+
+                    parser = ijson.parse(l)
+                    for prefix, event, value in parser: 
+                        if prefix == "corpusid":
+                            curr_corpusid = str(value)  # store the CorpusID
+                            break 
+                        else: 
+                            continue 
                     
-                    if match: curr_corpusid = match.group(1)
-                    else: continue  # if there's no match, skip this line; something is wrong
-                    
+                    if not curr_corpusid.strip(): continue  # missing CorpusID
+                    elif curr_corpusid in acl_corpusids: curr_is_acl = True 
+                    elif curr_corpusid in other_corpusids: curr_is_acl = False 
+                    else: continue
+
                     subdir_name = curr_corpusid[:4]
 
-                    # if ACL corpusId, we'll make {corpusId}.json in acl_dst; then, make the file
-                    # the key in a batch dict where associated value is the loaded JSON string 
-                    # (curr line) where the value is the loaded JSON string (curr line) from the 
-                    # curr papers dataset JSONL file
-                    subdir_and_file = f"{subdir_name}/{curr_corpusid}/{curr_corpusid}.json"
-                    if curr_corpusid in acl_corpusids:  
-                        makedirs(f"{acl_dst}/{subdir_name}/{curr_corpusid}", exist_ok=True)
-                        if not exists(f"{acl_dst}/{subdir_and_file}"):
-                            batch[f"{acl_dst}/{subdir_and_file}"] = json.loads(line)
-                            tqdm.write('added one to batch')
-                        acl_corpusids.remove(curr_corpusid)
-                    elif curr_corpusid in other_corpusids:  # same as L329, but for non-ACL
-                        makedirs(f"{other_dst}/{subdir_name}/{curr_corpusid}", exist_ok=True)
-                        if not exists(f"{other_dst}/{subdir_and_file}"):
-                            batch[f"{other_dst}/{subdir_and_file}"] = json.loads(line)
-                            tqdm.write('added one to batch')
-                        other_corpusids.remove(curr_corpusid)
+                    paper_dir = f"{sub_a if curr_is_acl else sub_c}/{subdir_name}/{curr_corpusid}"
+                    paper_out = f"{paper_dir}/{curr_corpusid}.json"
 
-                    if len(batch) >= batch_size:  # when batch is full, write all stored files
-                        write_batch()
+                    if not exists(paper_out):
+                        makedirs(paper_dir, exist_ok=True)  
+                        
+                        batched_is_acl[paper_out] = curr_is_acl
+                        batch[paper_out] = json.loads(l)
+
+                        tqdm.write(f"batched {paper_out}")
+
+                    if len(batch) >= batch_size: write_batch()
 
                     pbar.update(1)
-
-    write_batch()  # write out all remaining stored files (may be < batch_size)
+        
+        write_batch() # write out any remaining files (may be < batch_size)
+    write_batch()  
 
 
 def process_title(title: str):
-    """Normalizes and cleans the provided title
+    """Normalizes and cleans the provided paper title
     
     Parameters
     ----------
@@ -244,47 +249,50 @@ def process_title(title: str):
     return w
 
 
-def extract_annotation(s2orc_fo, field : str):
-    # Returns the desired field from the text of a s2orc file object
-    j = json.load(s2orc_fo)
-    if not j['content']['annotations'][field]: return None
-    data = j['content']['annotations'][field]
-    data = literal_eval(data)
-    out = []
-    for i in data:
-        out.append(j['content']['text'][i['start']:i['end']])
-
-    return out
-
-
 def load_completed_openalex_ids():
-    found_filepaths = glob.glob(f"{datasets_path}/openalex_found_*.txt")
-    unfound_filepaths = glob.glob(f"{datasets_path}/openalex_unfound_*.txt")
     found_ids = set()
-    unfound_ids = set()
+    found_filepaths = glob.glob(f"{datasets_path}/openalex_found_*.txt")
     for path in tqdm(found_filepaths):
         with open(path) as f:
             for line in f:
                 found_ids.add(line.strip())
+    
+    unfound_ids = set()
+    unfound_filepaths = glob.glob(f"{datasets_path}/openalex_unfound_*.txt")
     for path in tqdm(unfound_filepaths):
         with open(path) as f:
             for line in f:
                 unfound_ids.add(line.strip())
+
     return found_ids, unfound_ids
 
-def get_openalex_info(mailto: str = "", acl_src: str = sub_a, other_src: str = sub_c, 
-                      datasets_path: str = datasets_path, verbose: bool = False, start: int = 0, end: int = 10000,
+def get_openalex_info(mailto: str = "", verbose: bool = False, start: int = 0, end: int = 10000,
                       use_all_completed: bool = False):
-    """TODO
+    """Loop through every paper exctracted from s2orc and/or Papers, matching it to its OpenAlex
+    equivalent. Create a file W{OpenAlexID}.json for each, which contains the found OpenAlex 
+    metadata.
+
+    OpenAlex data is used to supplement any metadata that might be missing from the Papers
+    database, and to help (somewhat) improve author disambiguation at a later step. 
+    
+    Parameters
+    ----------
+        mailto (str): the email associated with OpenAlex
+        verbose (bool): 
+        start (int): the CorpusID to begin with (for job segmentation)
+        end (int): the CorpusID to end at
+        use_all_completed (bool): whether to load all found+unfound CorpusIDs, rather than
+                                  only those in range(start, end)
+    
+    Returns 
+    ----------
+        None 
     """
-    # Make files to keep track of which OpenAlex files have already been found/not found
+    # create files to track whether a given CorpusID has been found or failed in OpenAlex
     found_ids_filepath = f"{datasets_path}/openalex_found_{start}-{end}.txt"
     unfound_ids_filepath = f"{datasets_path}/openalex_unfound_{start}-{end}.txt"
 
     if use_all_completed:
-        # This loads the set of all found and unfound ids, instead of just the ones within start-end.
-        # I made this because I found a better set of start/end values, and there is no file telling which in those
-        # ranges have already been found -Jason
         found_ids, unfound_ids = load_completed_openalex_ids()
     else:
         if not exists(found_ids_filepath):
@@ -301,40 +309,45 @@ def get_openalex_info(mailto: str = "", acl_src: str = sub_a, other_src: str = s
             with open(unfound_ids_filepath) as f:
                 unfound_ids = {line.strip() for line in f}
 
-    def write_unfound(unfound_corpus_id):
+    def write_unfound(unfound_corpus_id):  # add a new CorpusID to unfound_ids
         with open(unfound_ids_filepath, 'a') as f:
             f.write(f"{unfound_corpus_id}\n")
             unfound_ids.add(unfound_corpus_id)
-        paper_path = f"{unfound_corpus_id[:4]}/{unfound_corpus_id}/NOT_IN_OPENALEX"
-        if is_acl:
-            paper_path = acl_src + '/' + paper_path
-        else:
-            paper_path = other_src + '/' + paper_path
-        with open(paper_path, 'w') as f:
-            pass
-
+        
+        paper_path = f"{sub_a if is_acl else sub_c}/{unfound_corpus_id[:4]}/{unfound_corpus_id}/NOT_IN_OPENALEX"
+        
+        with open(paper_path, 'w') as f: pass
 
     endpoint = "https://api.openalex.org/works"
     params = {"mailto": mailto, "per-page": 100}
     
     batches = {"mag": {}, "doi": {}, "date": {}, "year": {}, "title": {}}
-    batches_info = {}  # {corpusId: {keys = "mag", "doi", ...}}; raw identifiers for batched corpusIds
-    in_batches = {} # corpusId: (identifier, exact_key_stored_in_batches)
+    batches_info = {}  # {CorpusID: {"mag": ..., "doi": ..., etc.}}; raw identifiers for batched CorpusIDs
+    in_batches = {} # CorpusID: (identifier, exact_key_stored_in_batches)
 
     def get_batch(identifier: str, b: list): 
         """Get a batch of 50 results from OpenAlex
+
+        Parameters
+        ----------
+            identifier (str): which of MAG/DOI/etc. should be used to find papers in OpenAlex
+            b (list): a list of MAG/DOI/etc.
+
+        Returns 
+        ----------
+            None 
         """       
-        results_dict = {}  # {corpusId: result JSON}
+        results_dict = {}  # {CorpusID: result JSON}
         
         match identifier:
             case "mag" | "doi":
-                filter_string = f"{identifier}:{'|'.join(b)}"
+                filter_string = f"{identifier}:{'|'.join(b)}"  # find these 50 MAG/DOI
                 params["filter"] = filter_string
 
                 results = {}
                 if verbose: tqdm.write("About to do requests.get...")
-                while 'results' not in results:
-                    if verbose: tqdm.write('Starting a while loop')
+                while 'results' not in results:  # loop until successful query complete
+                    if verbose: tqdm.write('Looping until batch results successfully queried')
                     try:
                         results = requests.get(endpoint, params=params)
                         tqdm.write(f"{results.request.url}")
@@ -343,14 +356,15 @@ def get_openalex_info(mailto: str = "", acl_src: str = sub_a, other_src: str = s
                     except:
                         if verbose: 
                             tqdm.write(f'Trying requests.get again, id={identifier}')
-                            print(params["filter"])
+                            tqdm.write(params["filter"])
                         continue
+                
                 results = results['results']
                 if verbose: tqdm.write("done requests.get, gotten results")
 
-                # since some MAGs/DOIs mismatch/don't exist in OpenAlex, confirm which papers 
-                # we found
-                item_info = {v.lower() for v in b}  # all MAGs/DOIs in our batch
+                # some MAGs/DOIs cannot be found in OpenAlex; make sure to confirm which of these
+                # an identifier match failure happened to
+                item_info = {id.lower() for id in b}  # all MAGs/DOIs in this batch
 
                 for r in results:
                     # MAG/DOI value that was retrieved; .lower() because DOIs aren't case-sensitive, 
@@ -361,28 +375,31 @@ def get_openalex_info(mailto: str = "", acl_src: str = sub_a, other_src: str = s
 
                         for k in batches[identifier]:
                             if batches[identifier][k] == curr_info:
-                                corpus_id = k  # corpusId for the result MAG/DOI
+                                corpus_id = k  # CorpusID associated with the current MAG/DOI from results
                         
-                        if not corpus_id: continue  # if match but no corpus_id, we already found it
+                        if not corpus_id: continue  # if match but no CorpusID, we already found it
 
                         # isACL is somewhat redundant because of Subcorpus A, but doesn't hurt to keep
                         update_dict = {"isACL": is_acl, "corpusId": corpus_id, 
                                        "foundVia": identifier}
-                        r = {**update_dict, **r}
-                        results_dict[corpus_id] = r
+                        r = {**update_dict, **r}  # append update_dict to the query results
+                        results_dict[corpus_id] = r  # add the query results to results_dict
+
+                        # on a success, remove CorpusID from various batch dicts
                         del batches[identifier][corpus_id]
                         del batches_info[corpus_id]
                         del in_batches[corpus_id]
             case "date" | "year" | "title":
                 remove_from_batches = set()
 
-                for corpus_id in tqdm(batches[identifier], desc=f"Making individual queries ({identifier})", 
-                                      leave=False):  
+                # unlike MAGs/DOIs, dates/years/titles require individual queries
+                for corpus_id in tqdm(batches[identifier], desc=f"Making individual queries ({identifier})", leave=False):  
                     curr_info = batches[identifier][corpus_id]
-                    params["filter"] = curr_info  # don't need to make the filter string, since it's the key/id
+                    params["filter"] = curr_info  # date/year/title acts as the filter string implicitly
 
                     results = {}
                     if verbose: tqdm.write("About to do requests.get...")
+
                     while 'results' not in results:
                         if verbose: tqdm.write('Starting a while loop')
                         try:
@@ -395,19 +412,21 @@ def get_openalex_info(mailto: str = "", acl_src: str = sub_a, other_src: str = s
                                 tqdm.write(f'Trying requests.get again, id={identifier}')
                                 tqdm.write(params["filter"])
                             continue
+                    
+                    # first result *should* almost always be what we want, but sometimes isn't; confirm correct paper
+                    results = results["results"]
                     if verbose: tqdm.write("done requests.get, gotten results")
                     
-                    # first result *should* almost always be what we want, but sometimes isn't; check all
-                    results = results["results"]
-                    
                     if results:
-                        for result in results:
-                            result_title = process_title(result["title"])
+                        for r in results:
+                            result_title = process_title(r["title"])
                             orig_title = process_title(batches_info[corpus_id]["title"])
+                            
                             if result_title == orig_title:
-                                update_dict = {"isACL": is_acl, "corpusId": corpus_id}
-                                result = {**update_dict, **result}
-                                results_dict[corpus_id] = result
+                                update_dict = {"isACL": is_acl, "corpusId": corpus_id,
+                                               "foundVia": identifier}
+                                r = {**update_dict, **r}
+                                results_dict[corpus_id] = r
 
                                 # remove from batches after loop finishes to avoid error
                                 remove_from_batches.add(corpus_id)
@@ -416,15 +435,14 @@ def get_openalex_info(mailto: str = "", acl_src: str = sub_a, other_src: str = s
                                 del in_batches[corpus_id]
                                 break  # when a match has been made, break
 
-                for remove in remove_from_batches: del batches[identifier][remove]
+                for remove in remove_from_batches: 
+                    del batches[identifier][remove]
 
         result_items = tqdm(results_dict.items(), desc=f"Writing OpenAlex files ({identifier})", leave=False)
         for corpus_id, open_alex_result in result_items:
-            if is_acl: dst_path = acl_src 
-            else: dst_path = other_src  
-
             openalex_id = open_alex_result["id"][21:]
-            paper_path = f"{dst_path}/{corpus_id[:4]}/{corpus_id}/{openalex_id}.json"
+            paper_path = f"{sub_a if is_acl else sub_c }/{corpus_id[:4]}/{corpus_id}/{openalex_id}.json"
+            
             with open(paper_path, "w") as f:
                 json.dump(open_alex_result, f, indent=4)
             
@@ -432,6 +450,7 @@ def get_openalex_info(mailto: str = "", acl_src: str = sub_a, other_src: str = s
                 f.write(f"{corpus_id}\n")
                 found_ids.add(corpus_id)
 
+        # those identifiers still in in_batches failed to be found in OpenAlex
         failed_for_identifier = {c for c in set(in_batches.keys()) if in_batches[c][0] == identifier}
 
         for unfound_corpus_id in failed_for_identifier:
@@ -439,44 +458,56 @@ def get_openalex_info(mailto: str = "", acl_src: str = sub_a, other_src: str = s
             del batches[identifier][unfound_corpus_id]  # remove item from batch type it failed
             del in_batches[unfound_corpus_id]  # then remove from in_batches, since we'll re-add shortly
 
-            batches_info[unfound_corpus_id][identifier] = None
+            batches_info[unfound_corpus_id][identifier] = None  # make the current identifier type unusable for future queries
 
             for key in item_info.keys():  # "mag", "doi", etc.; earlier key = higher priority
                 curr_info = batches_info[unfound_corpus_id][key]  # value for given identifier; something or None
-                if curr_info: 
+                if curr_info:  # if the current key (identifier) has a value (i.e. is valid)
                     match key:
-                        case "mag":  # can use raw MAG/DOI in batch
+                        case "mag":  # prefer and use MAG when possible
                             batches[key][unfound_corpus_id] = curr_info 
                             in_batches[unfound_corpus_id] = (key, curr_info) 
                             break
-                        case "doi":
+                        case "doi":  # next best identifier is DOI (.lower(), since DOI isn't case sensitive)
                             curr_info = curr_info.lower()
                             batches[key][unfound_corpus_id] = curr_info 
                             in_batches[unfound_corpus_id] = (key, curr_info) 
                             break
                         case "title" | "date" | "year":  # must create filter string for batch
                             title = batches_info[unfound_corpus_id]["title"]
-                            if not title:
+                            if not title:  # without a title, it's impossible to find the correct paper
                                 del batches_info[unfound_corpus_id]
                                 write_unfound(unfound_corpus_id)
                                 break
                             filter_string = f"""title.search:{re_sub(r'[,:!"]', ' ', title.lower())}"""
                             
-                            if key != "title": 
+                            if key != "title":  # try title + date/year, before trying only the title
                                 filter_string += f",publication_{key}:{curr_info}"  #  ,date/year:filter_string
                             
                             batches[key][unfound_corpus_id] = filter_string
                             in_batches[unfound_corpus_id] = (key, filter_string)
                             break
-                elif key == 'title':
+                elif key == 'title':  # if curr_info is invalid and we're already on the title, we've failed to find a match
                     del batches_info[unfound_corpus_id]
                     write_unfound(unfound_corpus_id)
                     break
                     
                        
     def check_batch(identifier: str, bypass: bool = False, verbose: bool = True):
-        """Check if there are >= 50 items waiting to be batched for an identifier; if so, build 
-        the batch list and call get_batch
+        """If there are >= 50 items batched for the given identifier, build up the batch list 
+        and call get_batch
+
+        Parameters
+        ----------
+            identifier (str): which of MAG/DOI/etc. should be used to find papers in OpenAlex
+            bypass (bool): whether to do_batch (i.e. get_batch) for any number of queued identifiers, 
+                           rather than waiting for there to be >= 50
+            verbose (bool): whether to provide verbose details about the number of each identifier, 
+                            total batched across identifiers (which should be the same as the # in
+                            in_batches and batches_info)
+        Returns
+        ----------
+            None
         """
         batch = []            
 
@@ -494,6 +525,7 @@ def get_openalex_info(mailto: str = "", acl_src: str = sub_a, other_src: str = s
                         f"BATCHES_INFO {len(batches_info)}\n")
                 # tqdm.write(f"{batches}")
             
+            # add 50 of the given identifier to its batch
             for key in batches[identifier].values():
                 if len(batch) >= 50:
                     break 
@@ -504,15 +536,20 @@ def get_openalex_info(mailto: str = "", acl_src: str = sub_a, other_src: str = s
             batch.clear()
 
         if bypass:    
-            while len(batches[identifier]) > 0: do_batch()
+            while len(batches[identifier]) > 0: 
+                do_batch()
         elif len(batches[identifier]) >= 50:
-            if verbose: tqdm.write(f"IDENTIFIER {identifier} >= 50!!!")
-            while len(batches[identifier]) >= 50: do_batch()
+            if verbose: 
+                tqdm.write(f"IDENTIFIER {identifier} >= 50!!!")
+            
+            while len(batches[identifier]) >= 50: 
+                do_batch()
+            
             if verbose:
                 tqdm.write(f"FINISHED {identifier} (len = {len(batches[identifier])})" + 
                         "\n--------------------\n\n")
             
-        match identifier:  # try to keep the flowdown relatively clean as we work
+        match identifier:  # if MAG was just completed, check if DOI ready to go; etc.
             case "mag": check_batch("doi", verbose=verbose)
             case "doi": check_batch("date", verbose=verbose)
             case "date": check_batch("year", verbose=verbose)
@@ -520,11 +557,18 @@ def get_openalex_info(mailto: str = "", acl_src: str = sub_a, other_src: str = s
 
 
     def add_to_batches(corpus_id: str, paper_ids: dict):
+        """
+        Parameters 
+        ----------
+            corpus_id (str): the CorpusID of the paper to add to batches
+            paper_ids (dict): the available identifiers and their values for the paper
+        Returns 
+        ----------
+            None
+        """
         batches_info[corpus_id] = paper_ids
         
-        # Adding IDs to batches (set of ids for each id type), by first checking to see if the id exists 
-        # in batched
-        print(batches_info)
+        # to add IDs to their batch, first check to see if the ID is already in batches_info
         if batches_info[corpus_id]["mag"]:
             curr_mag = batches_info[corpus_id]["mag"]
             
@@ -539,10 +583,11 @@ def get_openalex_info(mailto: str = "", acl_src: str = sub_a, other_src: str = s
             in_batches[corpus_id] = ("doi", curr_doi)
             
             check_batch("doi", verbose=verbose)
-        elif not batches_info[corpus_id]['title']:
+        elif not batches_info[corpus_id]['title']:  # if no title, and no MAG/DOI, failure
             del batches_info[corpus_id]
-            if corpus_id in in_batches: del in_batches[corpus_id]
-        else:
+            if corpus_id in in_batches: 
+                del in_batches[corpus_id]
+        else:  # build the paper's filter string from the title, at minimum
             filter_string = f"""title.search:{re_sub(r'[,:!"]', ' ', batches_info[corpus_id]['title'].lower())}"""
             
             if batches_info[corpus_id]["date"]:
@@ -567,27 +612,26 @@ def get_openalex_info(mailto: str = "", acl_src: str = sub_a, other_src: str = s
 
                 check_batch("title", verbose=verbose)
 
-    is_acl = True
-    pbar = tqdm(total=int(11000000/(10000/(end-start))), desc="Looping through all papers")
+    pbar = tqdm(total=int(11000000/(10000/(end-start))), desc="Looping through papers")
 
-    for subcorpus in [acl_src, other_src]:
-        if subcorpus == acl_src: is_acl = True
-        else: is_acl = False 
+    for subcorpus in [sub_a, sub_c]:
+        is_acl = subcorpus == sub_a 
 
-        subdirs = tqdm([str(x) for x in range(start, end)], leave=False)
+        subdirs = tqdm([str(x) for x in range(start, end)], leave=False)  # CorpusIDs
         for subdir in subdirs:
             subdirs.set_description(f'Looping through {subcorpus}/{subdir}')
             papers = glob.iglob(f"{subcorpus}/{subdir}/*/*.json")
             
-            # Loop through papers begins here
             for paper in papers:
                 # if not running from clean, avoid OpenAlex results and full extracted s2orc papers
                 if "W" in paper or "s2orc" in paper: continue  
-                # if the openalex paper has already been found, also skip
+                
+                # if the OpenAlex data has already been found/failed, skip
                 curr_corpusid = paper.split("/")[-2]
                 if curr_corpusid in found_ids or curr_corpusid in unfound_ids:
                     pbar.update(1)
                     continue                
+                
                 pbar.update(1)
                 
                 paper_ids = {}
@@ -600,9 +644,9 @@ def get_openalex_info(mailto: str = "", acl_src: str = sub_a, other_src: str = s
                             case "publicationdate": paper_ids["date"] = value
                             case "year": paper_ids["year"] = value
                             case "title": paper_ids["title"] = value
-                            case "journal": break
+                            case "journal": break  # the first key after all currently relevant info
                     
-                    if paper_ids["doi"]:
+                    if paper_ids["doi"]:  # format all DOIs
                         paper_ids['doi'] = re_sub(r'[^\w\.\/\(\)]', '', paper_ids['doi'])
 
                 add_to_batches(curr_corpusid, paper_ids)
@@ -611,14 +655,12 @@ def get_openalex_info(mailto: str = "", acl_src: str = sub_a, other_src: str = s
             s2orc_papers = glob.iglob(f"{subcorpus}/{subdir}/*/s2orc-*.json")
             for paper in s2orc_papers:
                 curr_corpusid = paper.split("/")[-2]
-                if curr_corpusid in found_ids or curr_corpusid in unfound_ids: # Check to see if we've already attempted to find this corpusid
+                if curr_corpusid in found_ids or curr_corpusid in unfound_ids:
                     pbar.update(1)
                     continue
 
                 paper_ids = {}
-                
-                # Get paper_ids from paper, this time specifically for a s2orc file (we have to load json here)
-                with open(paper) as f:
+                with open(paper) as f:  # get paper_ids from full extracted s2orc files
                     j = json.load(f)
                     if j and j['externalids']:
                         if j['externalids']['mag']:
@@ -636,14 +678,14 @@ def get_openalex_info(mailto: str = "", acl_src: str = sub_a, other_src: str = s
                         if id not in paper_ids:
                             paper_ids[id] = None
 
-                    if paper_ids["doi"]:
+                    if paper_ids["doi"]:  # format all DOIs
                         paper_ids['doi'] = re_sub(r'[^\w\.\/\(\)]', '', paper_ids['doi'])
                     
 
                 add_to_batches(curr_corpusid, paper_ids)
                 pbar.update(1)
         
-        # don't mix ACL and non-ACL in batch to make our lives easier
+        # to avoid mixing ACL and non-ACL together in a batch, make sure to bypass to empty all current batches out
         check_batch("mag", True, verbose=verbose)
         check_batch("doi", True, verbose=verbose)
         check_batch("date", True, verbose=verbose)
@@ -656,16 +698,14 @@ def get_openalex_info(mailto: str = "", acl_src: str = sub_a, other_src: str = s
     cprint(f"Finished {start}-{end} for both Subcorpus A and Subcorpus C", c="g")
 
 
-def extract_authors(acl_src: str = sub_a, non_acl_src: str = sub_c, corpora_path: str = corpora_path, 
-                    datasets_path: str = datasets_path):
-    """ Goes through all of the ACL openalex files, and creates an author file for each author.
-        The lines of this file are the OpenAlex IDs of the ACL papers that author has written.
-    
+def extract_authors():
+    """Create an author file for every author present in ACL OpenAlex files. Each author file contains
+    the OpenAlex ID of every paper they've written, separated by newlines.
+        
+    The authors directory is built at corpora_path.
     Parameters
     ----------
-        acl_src (str): the path to subcorpus A
-        non_acl_src (str): the path to subcorpus C
-        corpora_path (str): the main path to all corpora (this is where the authors directory will go)
+        None
     
     Returns
     ----------
@@ -684,18 +724,17 @@ def extract_authors(acl_src: str = sub_a, non_acl_src: str = sub_c, corpora_path
     authors_path = f"{corpora_path}/authors"
     makedirs(authors_path, exist_ok=True)
     
-    # TODO: allow alternate subcorpus name option (e.g. using acl_src and non_acl_src); but how do to that with iglob?
     papers = glob.iglob(f"{corpora_path}/subcorpus_*/*/*/W*.json")  
-    for paper in tqdm(papers, total=11000000, desc="Extracting authors from all papers"): # papers estimate
+    for paper in tqdm(papers, total=11000000, desc="Extracting authors from all papers"):
         paper_split = paper.split('/')
         corpus_id = paper_split[-2]
 
-        if corpus_id in seen_papers:  continue  # if we've seen this paper and its authors before, move on
+        if corpus_id in seen_papers:  continue  # don't duplicate author contribs!
 
-        # paper_id = paper_split[-1][:-5]
-        paper_is_acl = False if paper_split[-4] == 'subcorpus_c' else True  # L77
+        paper_is_acl = False if paper_split[-4] == 'subcorpus_c' else True
         authors = []
 
+        # extract all author IDs from the OpenAlex file
         with open(paper) as f:
             parser = ijson.parse(f)
             for prefix, event, value in parser:
@@ -704,37 +743,42 @@ def extract_authors(acl_src: str = sub_a, non_acl_src: str = sub_c, corpora_path
                 if prefix == 'countries_distinct_count':
                     break
         
-        for author in authors:
-            author_subdir = author[1:5]
+        for author_id in authors:
+            author_subdir = author_id[1:5]  # like with CorpusIDs, group authors by the first four *digits* of their ID
             author_path = f"{authors_path}/{author_subdir}"
-            author_file = f"{author_path}/{author}.json"
+            author_file = f"{author_path}/{author_id}.json"
             
-            makedirs(author_path, exist_ok=True)  # make the author subdir if it doesn't exist
+            makedirs(author_path, exist_ok=True)
 
-            try:
-                with open(author_file, "r") as f: # if we've started extracting this author before, get their JSON
+            try: # if an author has been extracted previously, we should append/modify their file
+                with open(author_file, "r") as f: 
                     author_dict = json.load(f)
             except FileNotFoundError:
                 author_dict = {"acl_papers": [], "non_acl_papers": []}
             
-            acl_papers = set(author_dict["acl_papers"])  # temporarily cast to set to ensure no duplicates
+            # cast to sets for extra insurance against duplicate papers
+            acl_papers = set(author_dict["acl_papers"])  
             non_acl_papers = set(author_dict["non_acl_papers"])
 
             if paper_is_acl: acl_papers.add(corpus_id)
             else: non_acl_papers.add(corpus_id)
 
-            author_dict["acl_papers"] = list(acl_papers)  # cast back into list, which is serializable
+            # then cast back into lists, which are serializable
+            author_dict["acl_papers"] = list(acl_papers)  
             author_dict["non_acl_papers"] = list(non_acl_papers)
 
-            with open(author_file, "w") as f:  # save 
+            with open(author_file, "w") as f: 
                 json.dump(author_dict, f, indent=4)
 
         seen_papers.add(corpus_id)
         with open(seen_papers_filepath, "a") as f:
             f.write(f"{corpus_id}\n")
 
+### ----------
+### MULTIPROCESSING CODE BELOW THIS POINT: EXPERIMENTAL, BUT PREVIOUSLY FUNCTIONAL
+### ----------
 
-# These two functions are used in extract_authors_2 but they have to be top-level for multiprocessing
+# Functions must be top-level for multiprocessing
 def process_file(path):
     path_split = path.split('/')
     if path_split[-1].startswith('W'):
@@ -797,7 +841,16 @@ def extract_authors_2(corpora_path: str = corpora_path, datasets_path: str = dat
         with open(f"{datasets_path}/openalex_paths.txt") as f:
             oa_paths = {l.strip() for l in tqdm(f, desc='Loading oa paths')}
             return [x for x in tqdm(oa_paths, desc='filtering by subcorpus') if subcorpus in x]
-
+    
+    def update_authors_dict(authors_dict, author_info):
+        author_id, corpusid, is_acl = author_info
+        if author_id not in authors_dict:
+            authors_dict[author_id] = {'acl_papers': [], 'non_acl_papers': []}
+        if is_acl:
+            authors_dict[author_id]['acl_papers'].append(corpusid)
+        else:
+            authors_dict[author_id]['non_acl_papers'].append(corpusid)
+    
     def process_files(subcorpus, authors_dict):
         paths = load_openalex_paths(subcorpus)
         print('Finished collecting paths')
@@ -808,15 +861,6 @@ def extract_authors_2(corpora_path: str = corpora_path, datasets_path: str = dat
                 for author_info in result:
                     update_authors_dict(authors_dict, author_info)
         print(f"finished processing {subcorpus}")
-    
-    def update_authors_dict(authors_dict, author_info):
-        author_id, corpusid, is_acl = author_info
-        if author_id not in authors_dict:
-            authors_dict[author_id] = {'acl_papers': [], 'non_acl_papers': []}
-        if is_acl:
-            authors_dict[author_id]['acl_papers'].append(corpusid)
-        else:
-            authors_dict[author_id]['non_acl_papers'].append(corpusid)
 
     def write_json_files(authors_dict):
         authors_dir = f"{corpora_path}/authors2"
@@ -840,6 +884,4 @@ def extract_authors_2(corpora_path: str = corpora_path, datasets_path: str = dat
     write_json_files(authors_dict)
 
 if __name__ == "__main__":
-    # get_openalex_info(mailto='adamleif2024@u.northwestern.edu', start=2559, end=2560, verbose=True)
-    extract_authors_2()
-    # pass
+    pass
