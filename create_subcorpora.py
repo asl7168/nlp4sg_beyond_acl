@@ -12,12 +12,13 @@ from shutil import copyfileobj
 from cprint import cprint 
 import ijson
 import json
-from re import compile, sub as re_sub
+from re import sub as re_sub
 from unicodedata import normalize
 from ast import literal_eval
+from hashlib import md5
 
 def download_s2orc():
-    """Downloads and gunzips s2orc JSONL files from Semantic Scholar
+    """Downloads and gunzips s2orc JSONL files from Semantic Scholar.
 
     Parameters
     ----------
@@ -41,7 +42,7 @@ def download_s2orc():
 
 
 def download_s2_papers():
-    """Downloads and gunzips the Semantic Scholar 'Papers' JSONL files
+    """Downloads and gunzips the Semantic Scholar 'Papers' JSONL files.
 
     Parameters
     ----------
@@ -140,7 +141,7 @@ def extract_from_s2orc(start: int = 0, end: int = 30):
 
 def get_s2_info(batch_size: int = 5000, start: int = 0, end: int = 30):
     """For each paper in the Papers database, create {corpusId}.json (in either the ACL or non-ACL
-    directory, as appropriate) containing Semantic Scholar info (e.g. corpusId, externalIds, etc.)
+    directory, as appropriate) containing Semantic Scholar info (e.g. corpusId, externalIds, etc.).
 
     Parameters
     ----------
@@ -229,7 +230,7 @@ def get_s2_info(batch_size: int = 5000, start: int = 0, end: int = 30):
 
 
 def process_title(title: str):
-    """Normalizes and cleans the provided paper title
+    """Normalizes and cleans the provided paper title.
     
     Parameters
     ----------
@@ -266,6 +267,7 @@ def load_completed_openalex_ids():
 
     return found_ids, unfound_ids
 
+
 def get_openalex_info(mailto: str = "", verbose: bool = False, start: int = 0, end: int = 10000,
                       use_all_completed: bool = False):
     """Loop through every paper exctracted from s2orc and/or Papers, matching it to its OpenAlex
@@ -277,10 +279,10 @@ def get_openalex_info(mailto: str = "", verbose: bool = False, start: int = 0, e
     
     Parameters
     ----------
-        mailto (str): the email associated with OpenAlex
+        mailto (str): the email associated with OpenAlex (if any; registering one increases query rate limit)
         verbose (bool): 
-        start (int): the CorpusID to begin with (for job segmentation)
-        end (int): the CorpusID to end at
+        start (int): the subdirectory to begin with (first four digits of CorpusID; for job segmentation)
+        end (int): the subdirectory to end with
         use_all_completed (bool): whether to load all found+unfound CorpusIDs, rather than
                                   only those in range(start, end)
     
@@ -319,14 +321,16 @@ def get_openalex_info(mailto: str = "", verbose: bool = False, start: int = 0, e
         with open(paper_path, 'w') as f: pass
 
     endpoint = "https://api.openalex.org/works"
-    params = {"mailto": mailto, "per-page": 100}
+    # "Where do you get your API key, you ask? For now, please just use an MD5 hash of your email address."
+    api_key = md5(mailto.encode("utf-8")).hexdigest() 
+    params = {"mailto": mailto, "api_key": api_key, "per-page": 100}
     
     batches = {"mag": {}, "doi": {}, "date": {}, "year": {}, "title": {}}
     batches_info = {}  # {CorpusID: {"mag": ..., "doi": ..., etc.}}; raw identifiers for batched CorpusIDs
     in_batches = {} # CorpusID: (identifier, exact_key_stored_in_batches)
 
     def get_batch(identifier: str, b: list): 
-        """Get a batch of 50 results from OpenAlex
+        """Get a batch of 50 results from OpenAlex.
 
         Parameters
         ----------
@@ -495,7 +499,7 @@ def get_openalex_info(mailto: str = "", verbose: bool = False, start: int = 0, e
                        
     def check_batch(identifier: str, bypass: bool = False, verbose: bool = True):
         """If there are >= 50 items batched for the given identifier, build up the batch list 
-        and call get_batch
+        and call get_batch.
 
         Parameters
         ----------
@@ -562,6 +566,7 @@ def get_openalex_info(mailto: str = "", verbose: bool = False, start: int = 0, e
         ----------
             corpus_id (str): the CorpusID of the paper to add to batches
             paper_ids (dict): the available identifiers and their values for the paper
+        
         Returns 
         ----------
             None
@@ -617,7 +622,7 @@ def get_openalex_info(mailto: str = "", verbose: bool = False, start: int = 0, e
     for subcorpus in [sub_a, sub_c]:
         is_acl = subcorpus == sub_a 
 
-        subdirs = tqdm([str(x) for x in range(start, end)], leave=False)  # CorpusIDs
+        subdirs = tqdm([str(x) for x in range(start, end)], leave=False)
         for subdir in subdirs:
             subdirs.set_description(f'Looping through {subcorpus}/{subdir}')
             papers = glob.iglob(f"{subcorpus}/{subdir}/*/*.json")
@@ -699,8 +704,8 @@ def get_openalex_info(mailto: str = "", verbose: bool = False, start: int = 0, e
 
 
 def extract_authors():
-    """Create an author file for every author present in ACL OpenAlex files. Each author file contains
-    the OpenAlex ID of every paper they've written, separated by newlines.
+    """Create an author file for every author present in ACL OpenAlex files. Each author file contains the OpenAlex ID 
+    of every paper they've written, separated by newlines.
         
     The authors directory is built at corpora_path.
     Parameters
@@ -721,7 +726,6 @@ def extract_authors():
          with open(seen_papers_filepath) as f:
             seen_papers = {l.strip() for l in f}
 
-    authors_path = f"{corpora_path}/authors"
     makedirs(authors_path, exist_ok=True)
     
     papers = glob.iglob(f"{corpora_path}/subcorpus_*/*/*/W*.json")  
