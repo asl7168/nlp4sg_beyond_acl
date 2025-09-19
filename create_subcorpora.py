@@ -2,7 +2,7 @@ from paths import *
 from credentials import headers
 
 from os.path import exists
-from os import mkdir, makedirs
+from os import mkdir, makedirs, remove
 import requests
 from tqdm import tqdm 
 from urllib.request import urlretrieve as urlretrieve
@@ -17,12 +17,17 @@ from unicodedata import normalize
 from ast import literal_eval
 from hashlib import md5
 
-def download_s2orc():
+def download_s2orc(call_extract: bool = False, extract_works: bool = True, delete_jsonls: bool = False):
     """Downloads and gunzips s2orc JSONL files from Semantic Scholar.
 
     Parameters
     ----------
-        None
+        call_extract (bool): whether to extract files from gunzipped JSONLs now, rather
+                             than calling extract_from_s2orc later; significantly increases
+                             function runtime, since extract_from_s2orc is particularly slow
+                             when run in sequence
+        extract_works (bool): see extract_from_s2orc
+        delete_jsonls (bool): see extract_from_s2orc
     
     Returns
     ----------
@@ -37,12 +42,27 @@ def download_s2orc():
     s2orc = "https://api.semanticscholar.org/datasets/v1/release/2024-01-02/dataset/s2orc"
     db_files = requests.get(s2orc, headers=headers).json()["files"]
     for i in tqdm(range(len(db_files)), desc="Downloading s2orc"):
-        urlretrieve(db_files[i], f"{s2orc_path}/s2orc-{i}.jsonl.gz")
+        s2orc_jsonl = f"{s2orc_path}/s2orc-{i}.jsonl"
+        s2orc_gz = s2orc_jsonl + ".gz"
+        if not (exists(s2orc_jsonl) or exists(s2orc_gz)):
+           urlretrieve(db_files[i], f"{s2orc_path}/s2orc-{i}.jsonl.gz")
 
-    for f in tqdm(glob.glob(f"{s2orc_path}/*.gz"), desc="gunzipping"):           
-        with gunzip(f, "rb") as f_in:
-            with open(f[:-3], "wb") as f_out:
-                copyfileobj(f_in, f_out)
+    with tqdm(glob.glob(f"{s2orc_path}/*.gz"), leave=False, desc="Gunzipping S2ORC") as pbar:
+        for f in pbar:  
+            pbar.set_description(f"Gunzipping {f}")         
+            with gunzip(f, "rb") as f_in:
+                with open(f[:-3], "wb") as f_out:
+                    copyfileobj(f_in, f_out)
+
+            pbar.set_description(f"Deleting {f}")
+            remove(f)  # once .gz file is gunzipped, delete it
+        
+            if call_extract:
+                pbar.set_description(f"Extracting {f}")
+                s2orc_num = int(f.split("-")[-1].split(".")[0])
+                extract_from_s2orc(s2orc_num, s2orc_num + 1, extract_works, delete_jsonls)
+            
+            pbar.update(1)
 
 
 def download_s2_papers():
@@ -66,17 +86,17 @@ def download_s2_papers():
 
     for f in tqdm(glob.glob(f"{s2_papers_db_path}/*.gz"), desc="gunzipping"):           
         with gunzip(f, "rb") as f_in:
-            with open(f[:-3], "wb") as f_out:
+            with open(f[:-3], "wb", encoding="utf-8") as f_out:
                 copyfileobj(f_in, f_out)
 
 
-def extract_from_s2orc(start: int = 0, end: int = 30):
+def extract_from_s2orc(start: int = 0, end: int = 30, extract_works: bool = True, delete_jsonls: bool = False):
     """Using the downloaded s2orc dataset, extract individual paper JSON files and organize
     based on whether that paper was published at ACL.
 
     Files are stored in their own directories named for their CorpusID. These directories
     will, later, additionally contain a paper's metadata from the Papers dataset, and 
-    from OpenAlex. Paper directories are stored, naively, within a directory named for its
+    from OpenAlex. Paper directories are stored, naively, within a directory named for their
     contents' first four CorpusID digits.
     
     This function additionally creates two txt files that store all ACL and non-ACL 
@@ -86,7 +106,10 @@ def extract_from_s2orc(start: int = 0, end: int = 30):
     ----------
         start (int): which s2orc JSONL file to start at (for job segmentation)
         end (int): which s2orc JSONL file to end at
-    
+        extract_works (bool): whether to extract individual works from JSONL files; if False, 
+                              still creates destination directories and grouping directories
+        delete_jsonls (bool): whether to delete each JSONL file after extraction from it is complete
+                              
     Returns
     ----------
         None
@@ -96,13 +119,11 @@ def extract_from_s2orc(start: int = 0, end: int = 30):
     for dir in [sub_a, sub_c]:  # ACL and non-ACL directories
         if not exists(dir): mkdir(dir)
 
-    # TODO: could batching be added to this file?
-
     s2orc_jsonls = tqdm(range(start, end))
     for i in s2orc_jsonls:
         curr_jsonl = f"{s2orc_path}/s2orc-{i}.jsonl"
 
-        with open(curr_jsonl) as f:
+        with open(curr_jsonl, encoding="utf-8") as f:
             with tqdm(total=366000, leave=False, desc=f"Looping through {curr_jsonl.split('/')[-1]}") as pbar:  # ~366k papers per JSONL
                 for l in f:  # loop through every JSON in the JSONL
                     curr_corpusid = ""
@@ -131,17 +152,19 @@ def extract_from_s2orc(start: int = 0, end: int = 30):
                     if not exists(s2orc_file):
                         makedirs(paper_dir, exist_ok=True)
                         
-                        j = json.loads(l)
+                        # if extract_works == False, create an *empty file* for all works
+                        j = json.loads(l if extract_works else "{}")
                         with open(s2orc_file, 'w') as sf:
                             json.dump(j, sf, indent=4)
                         
-                        tqdm.write(f"created file at {s2orc_file}")
+                        pbar.set_description(f"created file at {s2orc_file}")
 
                         with open(f"{datasets_path}/{'' if curr_is_acl else 'non_'}acl_corpusids.txt", 'a') as cf:
                             cf.write(f"{curr_corpusid}\n")
 
                     pbar.update(1)
-                    
+        
+        if delete_jsonls: remove(curr_jsonl)            
 
 def get_s2_info(batch_size: int = 5000, start: int = 0, end: int = 30):
     """For each paper in the Papers database, create {corpusId}.json (in either the ACL or non-ACL
@@ -273,7 +296,7 @@ def load_completed_openalex_ids():
 
 
 def get_openalex_info(mailto: str = "", verbose: bool = False, start: int = 0, end: int = 10000,
-                      use_all_completed: bool = False):
+                      use_all_completed: bool = False, get_ids_from_s2orc: bool = True):
     """Loop through every paper exctracted from s2orc and/or Papers, matching it to its OpenAlex
     equivalent. Create a file W{OpenAlexID}.json for each, which contains the found OpenAlex 
     metadata.
@@ -641,8 +664,6 @@ def get_openalex_info(mailto: str = "", verbose: bool = False, start: int = 0, e
                     pbar.update(1)
                     continue                
                 
-                pbar.update(1)
-                
                 paper_ids = {}
                 with open(paper) as f:
                     parser = ijson.parse(f)
@@ -659,40 +680,42 @@ def get_openalex_info(mailto: str = "", verbose: bool = False, start: int = 0, e
                         paper_ids['doi'] = re_sub(r'[^\w\.\/\(\)]', '', paper_ids['doi'])
 
                 add_to_batches(curr_corpusid, paper_ids)
-
-            # Next, loop through s2orc papers (looking specifically for ones that didn't have an s2 in the dir)
-            s2orc_papers = glob.iglob(f"{subcorpus}/{subdir}/*/s2orc-*.json")
-            for paper in s2orc_papers:
-                curr_corpusid = paper.split("/")[-2]
-                if curr_corpusid in found_ids or curr_corpusid in unfound_ids:
-                    pbar.update(1)
-                    continue
-
-                paper_ids = {}
-                with open(paper) as f:  # get paper_ids from full extracted s2orc files
-                    j = json.load(f)
-                    if j and j['externalids']:
-                        if j['externalids']['mag']:
-                            paper_ids['mag'] = j['externalids']['mag']
-                        if j['externalids']['doi']:
-                            paper_ids['doi'] = j['externalids']['doi']
-                    if j and j['content'] and j['content']['annotations'] and j['content']['annotations']['title']:
-                        curr_title_index = literal_eval(j['content']['annotations']['title'])
-                        if j['content']['text']:
-                            paper_ids['title'] = j['content']['text'][int(curr_title_index[0]['start']):int(curr_title_index[0]['end'])]
-                            if len(paper_ids['title']) > 500:
-                                paper_ids['title'] = None
-                    
-                    for id in ['mag', 'doi', 'date', 'year', 'title']:
-                        if id not in paper_ids:
-                            paper_ids[id] = None
-
-                    if paper_ids["doi"]:  # format all DOIs
-                        paper_ids['doi'] = re_sub(r'[^\w\.\/\(\)]', '', paper_ids['doi'])
-                    
-
-                add_to_batches(curr_corpusid, paper_ids)
                 pbar.update(1)
+
+            if get_ids_from_s2orc:
+                # Next, loop through s2orc papers that didn't have a matching entry in Papers
+                s2orc_papers = glob.iglob(f"{subcorpus}/{subdir}/*/s2orc-*.json")
+                for paper in s2orc_papers:
+                    curr_corpusid = paper.split("/")[-2]
+                    if curr_corpusid in found_ids or curr_corpusid in unfound_ids:
+                        pbar.update(1)
+                        continue
+
+                    paper_ids = {}
+                    with open(paper) as f:  # get paper_ids from full extracted s2orc files
+                        j = json.load(f)
+                        if j and j['externalids']:
+                            if j['externalids']['mag']:
+                                paper_ids['mag'] = j['externalids']['mag']
+                            if j['externalids']['doi']:
+                                paper_ids['doi'] = j['externalids']['doi']
+                        if j and j['content'] and j['content']['annotations'] and j['content']['annotations']['title']:
+                            curr_title_index = literal_eval(j['content']['annotations']['title'])
+                            if j['content']['text']:
+                                paper_ids['title'] = j['content']['text'][int(curr_title_index[0]['start']):int(curr_title_index[0]['end'])]
+                                if len(paper_ids['title']) > 500:
+                                    paper_ids['title'] = None
+                        
+                        for id in ['mag', 'doi', 'date', 'year', 'title']:
+                            if id not in paper_ids:
+                                paper_ids[id] = None
+
+                        if paper_ids["doi"]:  # format all DOIs
+                            paper_ids['doi'] = re_sub(r'[^\w\.\/\(\)]', '', paper_ids['doi'])
+                        
+
+                    add_to_batches(curr_corpusid, paper_ids)
+                    pbar.update(1)
         
         # to avoid mixing ACL and non-ACL together in a batch, make sure to bypass to empty all current batches out
         check_batch("mag", True, verbose=verbose)
