@@ -17,6 +17,49 @@ csv_columns = ["title", "corpus_id", "openalex_id", "author_ids", "venue", "is_a
 concepts = {'C204321447', 'C41895202', 'C23123220', 'C203005215', 'C119857082', 
             'C186644900', 'C28490314', 'C2777530160', 'C137293760'}
 
+def process_author_file(path):
+    """Given the path to an author's file, extract and return its data as a dictionary.
+
+    Parameters
+    ----------
+        path (str): path to an OpenAlex author file (see: extract_authors()) 
+    
+    Returns
+    ----------
+        dict: JSONKey:JSONvalue
+    """
+    with open(path) as f:
+        j = json.load(f)
+    
+    id_string = path.split('/')[-1].split('.')[0]
+    return {'AuthorID': int(id_string[1:]),
+            'acl_papers': [int(id) for id in j['acl_papers']],
+            'non_acl_papers': [int(id) for id in j['non_acl_papers']]}
+
+
+def make_author_csv():
+    """Collate OpenAlex author info into a single CSV.
+
+    Parameters 
+    ----------
+        None 
+
+    Returns 
+    ----------
+        None
+    """
+    author_columns = ['AuthorID', 'acl_papers', 'non_acl_papers']
+
+    author_files = glob.glob(f"{authors_path}/*/*.json")
+    tqdm.write('Collected author paths')
+
+    with Pool() as pool:
+        results = pool.map(process_author_file, author_files)
+    
+    df = pd.DataFrame(results, columns=author_columns)
+    df.to_csv(f"{csvs_path}/authors.csv")
+
+
 def csv_builder(threshold: float = 0.0, start: int = 0, end: int = 10000, batch_size: int = 1000):
     """Navigate through each OpenAlex metadata JSON file, extracting key information and appending to a 
     master data CSV. Utilize authors.csv to determine which author has the most ACL contributions, adding
@@ -145,48 +188,6 @@ def merge_csvs():
 
     merged_csv.to_csv(f"{csvs_path}/papers_merged.csv")
 
-
-def process_author_file(path):
-    """Given the path to an author's file, extract and return its data as a dictionary.
-
-    Parameters
-    ----------
-        path (str): path to an OpenAlex author file (see: extract_authors()) 
-    
-    Returns
-    ----------
-        dict: JSONKey:JSONvalue
-    """
-    with open(path) as f:
-        j = json.load(f)
-    
-    id_string = path.split('/')[-1].split('.')[0]
-    return {'AuthorID': int(id_string[1:]),
-            'acl_papers': [int(id) for id in j['acl_papers']],
-            'non_acl_papers': [int(id) for id in j['non_acl_papers']]}
-
-
-def make_author_csv():
-    """Collate OpenAlex author info into a single CSV.
-
-    Parameters 
-    ----------
-        None 
-
-    Returns 
-    ----------
-        None
-    """
-    author_columns = ['AuthorID', 'acl_papers', 'non_acl_papers']
-
-    author_files = glob.glob(f"{authors_path}/*/*.json")
-    tqdm.write('Collected author paths')
-
-    with Pool() as pool:
-        results = pool.map(process_author_file, author_files)
-    
-    df = pd.DataFrame(results, columns=author_columns)
-    df.to_csv(f"{csvs_path}/authors.csv")
 
 if __name__ == "__main__":
     pass

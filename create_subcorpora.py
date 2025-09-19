@@ -704,10 +704,9 @@ def get_openalex_info(mailto: str = "", verbose: bool = False, start: int = 0, e
 
 
 def extract_authors():
-    """Create an author file for every author present in ACL OpenAlex files. Each author file contains the OpenAlex ID 
-    of every paper they've written, separated by newlines.
+    """Create an author file for every author present in OpenAlex files. Each author file contains the OpenAlex ID 
+    of ACL and non-ACL paper that they have written.
         
-    The authors directory is built at corpora_path.
     Parameters
     ----------
         None
