@@ -3,7 +3,8 @@
 # all others paths rely on it). Otherwise, custom filepaths are untested
 
 # main directory, in which datasets are downloaded and subcorpora are built
-corpora_path = "/projects/b1170/corpora/comp_ling_meta"
+# corpora_path = "/projects/b1170/corpora/comp_ling_meta"
+corpora_path = "C:/Users/Adam/Desktop/CoLLaB/NLP4SG/CORPUS"
 
 datasets_path = f"{corpora_path}/datasets"  # where datasets are stored
 authors_path = f"{corpora_path}/authors"  # ---

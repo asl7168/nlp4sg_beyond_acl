@@ -30,7 +30,11 @@ def download_s2orc():
     """
     if not exists(s2orc_path): mkdir(s2orc_path)
 
-    s2orc = "https://api.semanticscholar.org/datasets/v1/release/latest/dataset/s2orc"
+    # while 'latest'was previously the release used, 'latest' after cccccccc seems to be
+    # broken -- i.e. rather than there being 30 files, there are ~200-500. unclear what the
+    # cause of this is, but for now, we're relegating ourselves to using the older version, 
+    # since this is an issue on SemanticScholar's end
+    s2orc = "https://api.semanticscholar.org/datasets/v1/release/2024-01-02/dataset/s2orc"
     db_files = requests.get(s2orc, headers=headers).json()["files"]
     for i in tqdm(range(len(db_files)), desc="Downloading s2orc"):
         urlretrieve(db_files[i], f"{s2orc_path}/s2orc-{i}.jsonl.gz")
@@ -54,7 +58,7 @@ def download_s2_papers():
     """
     if not exists(s2_papers_db_path): mkdir(s2_papers_db_path)
 
-    s2_papers = "https://api.semanticscholar.org/datasets/v1/release/latest/dataset/papers"
+    s2_papers = "https://api.semanticscholar.org/datasets/v1/release/2024-01-02/dataset/papers"
     db_files = requests.get(s2_papers, headers=headers).json()["files"]
     for i in tqdm(range(len(db_files)), desc="Downloading Papers"): 
         if not exists(f"{s2_papers_db_path}/papers-{i}.jsonl.gz"):
