@@ -35,10 +35,10 @@ def download_s2orc(call_extract: bool = False, extract_works: bool = True, delet
     """
     if not exists(s2orc_path): mkdir(s2orc_path)
 
-    # while 'latest'was previously the release used, 'latest' after cccccccc seems to be
-    # broken -- i.e. rather than there being 30 files, there are ~200-500. unclear what the
-    # cause of this is, but for now, we're relegating ourselves to using the older version, 
-    # since this is an issue on SemanticScholar's end
+    # while 'latest'was previously the release used, datasets after 2024-01-02 seem off-spec -- 
+    # i.e. rather than there being 30 files, there are ~200-500. unclear what the cause of 
+    # this is, but for now, we're relegating ourselves to using the older version, since 
+    # this is presumably an issue on SemanticScholar's end
     s2orc = "https://api.semanticscholar.org/datasets/v1/release/2024-01-02/dataset/s2orc"
     db_files = requests.get(s2orc, headers=headers).json()["files"]
     for i in tqdm(range(len(db_files)), desc="Downloading s2orc"):
@@ -62,6 +62,7 @@ def download_s2orc(call_extract: bool = False, extract_works: bool = True, delet
                 s2orc_num = int(f.split("-")[-1].split(".")[0])
                 extract_from_s2orc(s2orc_num, s2orc_num + 1, extract_works, delete_jsonls)
             
+            tqdm.write(f"Finished {f}")
             pbar.update(1)
 
 
