@@ -51,7 +51,7 @@ def download_s2orc(call_extract: bool = False, extract_works: bool = True, delet
         for f in pbar:  
             pbar.set_description(f"Gunzipping {f}")         
             with gunzip(f, "rb") as f_in:
-                with open(f[:-3], "wb", encoding="utf-8") as f_out:
+                with open(f[:-3], "wb") as f_out:
                     copyfileobj(f_in, f_out)
 
             pbar.set_description(f"Deleting {f}")
@@ -94,7 +94,7 @@ def download_s2_papers(call_get: bool = False, delete_jsonls: bool = False):
     with tqdm(glob.glob(f"{s2_papers_db_path}/*.gz"), leave=False, desc="Gunzipping Papers") as pbar:
         for f in pbar:           
             with gunzip(f, "rb") as f_in:
-                with open(f[:-3], "wb", encoding="utf-8") as f_out:
+                with open(f[:-3], "wb") as f_out:
                     copyfileobj(f_in, f_out)
 
             pbar.set_description(f"Deleting {f}")
@@ -103,7 +103,7 @@ def download_s2_papers(call_get: bool = False, delete_jsonls: bool = False):
             if call_get:
                 pbar.set_description(f"Extracting {f}")
                 papers_num = int(f.split("-")[-1].split(".")[0])
-                extract_from_papers(batch_size, papers_num, papers_num + 1, delete_jsonls)
+                extract_from_papers(start=papers_num, end=papers_num + 1, delete_jsonls=delete_jsonls)
 
             tqdm.write(f"Finished {f}")
             pbar.update(1)
@@ -221,13 +221,14 @@ def extract_from_papers(batch_size: int = 5000, start: int = 0, end: int = 30, d
 
     def write_batch():
         with tqdm(batch, leave=False) as batch_bar:
-            for file_path in pbar:
+            for file_path in batch_bar:
                 batch_bar.set_description(f'Writing file at {file_path}')
                 with open(file_path, 'w') as f2:
                     json.dump(batch[file_path], f2, indent=4)
             
-                if batched_is_acl[file_path]: acl_corpusids.remove(curr_corpusid)
-                else: other_corpusids.remove(curr_corpusid)
+                cid = file_path.split("/")[-2]
+                if batched_is_acl[file_path]: acl_corpusids.discard(cid)
+                else: other_corpusids.discard(cid)
 
         batch.clear()
         batched_is_acl.clear() 
@@ -256,6 +257,7 @@ def extract_from_papers(batch_size: int = 5000, start: int = 0, end: int = 30, d
                     else:  # if the current CorpusID has not been seen previously, note it
                         with open(f"{datasets_path}/missing_from_s2orc.txt", "a") as f:
                             f.write(f"{curr_corpusid}\n")
+                        continue 
 
                     subdir_name = curr_corpusid[:4]
 
