@@ -1,48 +1,54 @@
 # Understanding the Dataset
+1. S2ORC and Papers datasets are downloaded from Semantic Scholar
+2. Files are sorted based on whether they are "ACL" (i.e. published at an ACL or associated venue) or "non-ACL"
+3. Matching metadata for *all* extracted works (where possible) are found in OpenAlex
+4. Author files are created based on the downloaded OpenAlex data
 
-## subcorpus_a 
-All works published at an ACL(-adjacent) venue.
+All work-related files (S2ORC, Papers, and OpenAlex) are stored together within sub_a (for ACL files) or sub_c (non-ACL). Works are grouped by the first four digits of their Semantic Scholar CorpusID, which are used to create a directory that itself contains all works whose CorpusIDs begin with those four digits. Each CorpusID gets its own directory within the appropriate grouping directory; and it is this directory that contains the associated S2ORC, Papers, and OpenAlex files for a given work. 
 
-## subcorpus_b 
-DEPRECATED?
+An example target ACL work with CorpusID 123499 would be stored as follows:
 
-## subcorpus_c 
-All works published outside of ACL. 
+```
+.
+└── corpora_path/                      # see paths.py
+    ├── authors/
+    ├── datasets/
+    ├── subcorpus_a/                   # ACL files
+    │   └── 1234/                      # grouped CorpusIDs
+    │       ├── 1234/
+    │       ├── 123456/
+    │       ├── 123412/
+    │       └── 123499/                # target work's CorpusID
+    │           ├── s2orc-123499.json  # the S2ORC file
+    │           ├── 123499.json        # the Papers metadata file
+    │           └── W999999.json       # the matched OpenAlex metadata file 
+    └── subcorpus_c/
+```
 
-# [create_subcorpora.py](create_subcorpora.py)
-This file contains the functions that are responsible for downloading SemanticScholar datasets (S2ORC and Ppaers); extracting individual works from those JSONL files; and pairing those works with their equivalents in OpenAlex (as well as extracting the authors from works, as identified via OpenAlex).
+Author profiles are stored separately from their works, instead containing sets of their ACL and non-ACL works. 
 
-## download_s2orc()
-Downloads and gunzips s2orc JSONL files from Semantic Scholar.
+# Creating the Dataset
+A user attempting to recreate the dataset from scratch will need access to:
+-  ~TODO GB of storage space (for the smallest possible version); 
+- A [Semantic Scholar API Key](https://www.semanticscholar.org/product/api)
+- An [OpenAlex API Key](https://docs.openalex.org/how-to-use-the-api/rate-limits-and-authentication), for efficient API calls (Premium or Educator access required for the current version of the code)
 
-## download_s2_papers()
-Downloads and gunzips the Semantic Scholar 'Papers' JSONL files.
+We recommend the defaults provided for each function; the dataset is quite large, so users attempting to recreate the dataset should ensure that their computer (or allocation on a cluster) has adequate space to store files -- especially when non-destructive function parameters are set (i.e. when the JSONL files are not deleted post-extraction). 
 
-## extract_from_s2orc()
-Extracts individual works from the downloaded S2ORC JSONL files, organizing them based on whether or not that paper was published in an ACL(-adjacent) venue. All files are stored in individual directories named for their SemanticScholar CorpusID; and those directories will additionally contain metadata extracted from the Papers dataset, and from OpenAlex. 
-
-CorpusID directories are stored within a directory that is named for the first four digits of the CorpusID; this provides a simple way to group multiple papers together for later iteration/data searching.
-
-This function *additionally* creates two text files, stored in the datasets directory, that store all ACL and non-ACL CorpusIDs for later use.
-
-## get_s2_info() 
-Extracts individual works' metadata from the downloaded Papers JSONL files, placing them in their appropriate CorpusID directory (as specified above).
-
-## get_openalex_info()
-Loops through all extracted works from SemanticScholar, matching them to their equivalent in OpenAlex. Then, creates an OpenAlex JSON file for each, containing the OpenAlex metadata; this file is used to supplement any metadata that may be missing in SemanticScholar, and helps to improve author disambiguation. 
-
-## extract_authors() 
-Loops through all extracted ACL works' OpenAlex files and extracts every author associated with that paper. Appends the ACL and non-ACL works of each author to the author file that is created for future use.
+A user with adequate space for JSONL and extracted S2ORC files will be advantaged by running multiple function calls simultaneously, either in multiple terminals or through their cluster's job system. Example Slurm scripts can be found in the [examples](examples/) folder of this repository.
 
 
-# [csv_builder.py](csv_builder.py)
-This file contains the functions that collate paper and author metadata into CSVs for data analysis and further augmentation (e.g. with Google Scholar h5 index info). 
+An example recipe for a space-limited user might look as follows:  # TODO: maybe move this to the examples folder, too?
 
-## make_author_csv() 
-Collates OpenAlex author information from all papers into a single CSV. 
+```python
+# TODO: finish this example 
 
-## csv_builder() 
-Navigates through each OpenAlex metadata JSON file, extracts key information, and appends to a master works CSV. Utilizes authors.csv (as above) to determine which contributing author has the most ACL works of them all.
+from create_subcorpora import * 
 
-## merge_csvs()
-Combines any sub-CSVs created by csv_builder() into a single works CSV. 
+if __name__ == "__main__":
+    download_s2orc(True, False, True)  # calls extract_from_s2orc; does not save full S2ORC work bodies (i.e. full paper texts, etc.); deletes JSONL files after extraction complete
+    download_s2_papers(True, True)  # as above, but does make Papers metadata files contentful (as this is a critical step in building the corpus)
+    get_openalex_info(get_ids_from_s2orc=False)  # matches works to their OpenAlex metadata, but does not attempt to utilize CorpusIDs only present in S2ORC files (since they were not saved)
+    extract_authors()  # creates author profiles for all authors in OpenAlex metadata files
+    csv_builder()  # TODO: decide if the typical user should make multiple and then merge_csv or not
+```
