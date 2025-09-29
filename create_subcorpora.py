@@ -185,6 +185,7 @@ def extract_from_s2orc(start: int = 0, end: int = 30, extract_works: bool = True
         
         if delete_jsonls: remove(curr_jsonl)            
 
+
 def extract_from_papers(batch_size: int = 5000, start: int = 0, end: int = 30, delete_jsonls: bool = False):
     """For each paper in the Papers database, create {corpusId}.json (in either the ACL or non-ACL
     directory, as appropriate) containing Semantic Scholar info (e.g. corpusId, externalIds, etc.).
@@ -215,7 +216,6 @@ def extract_from_papers(batch_size: int = 5000, start: int = 0, end: int = 30, d
         for line in tqdm(f, total=10000000):
             other_corpusids.add(line.strip())
 
-    
     batch = {}  # from /path/to/make/file/at/{CorpusID}.json to paper metadata
     batched_is_acl = {}  # from /path/...{CorpusID.json} to is_acl (True or False)
 
@@ -225,10 +225,6 @@ def extract_from_papers(batch_size: int = 5000, start: int = 0, end: int = 30, d
                 batch_bar.set_description(f'Writing file at {file_path}')
                 with open(file_path, 'w') as f2:
                     json.dump(batch[file_path], f2, indent=4)
-            
-                cid = file_path.split("/")[-2]
-                if batched_is_acl[file_path]: acl_corpusids.discard(cid)
-                else: other_corpusids.discard(cid)
 
         batch.clear()
         batched_is_acl.clear() 
@@ -247,17 +243,24 @@ def extract_from_papers(batch_size: int = 5000, start: int = 0, end: int = 30, d
                     for prefix, event, value in parser: 
                         if prefix == "corpusid":
                             curr_corpusid = str(value)  # store the CorpusID
-                            break 
+                        elif prefix == "externalids.ACL":
+                            curr_is_acl = True
+                            break
                         else: 
                             continue 
                     
-                    if not curr_corpusid.strip(): continue  # missing CorpusID
-                    elif curr_corpusid in acl_corpusids: curr_is_acl = True 
-                    elif curr_corpusid in other_corpusids: curr_is_acl = False 
-                    else:  # if the current CorpusID has not been seen previously, note it
+                    if not curr_corpusid.strip(): continue  # missing CorpusID, somehow
+                    elif not (curr_corpusid in acl_corpusids or curr_corpusid in other_corpusids):
+                        # if the current CorpusID has not been seen previously, note it
                         with open(f"{datasets_path}/missing_from_s2orc.txt", "a") as f:
                             f.write(f"{curr_corpusid}\n")
-                        continue 
+
+                        # and add the CorpusID to the relevant file
+                        with open(f"{datasets_path}/{'' if curr_is_acl else 'non_'}acl_corpusids.txt", 'a') as f:
+                            f.write(f"{curr_corpusid}\n")
+
+                    if curr_is_acl: acl_corpusids.discard(curr_corpusid)
+                    else: other_corpusids.discard(curr_corpusid)
 
                     subdir_name = curr_corpusid[:4]
 
@@ -271,15 +274,16 @@ def extract_from_papers(batch_size: int = 5000, start: int = 0, end: int = 30, d
                         batch[paper_out] = json.loads(l)
 
                         pbar.set_description(f"Batched {paper_out}")
-
+                    else:
+                        pbar.set_description(f"Not batching {paper_out}")
+                    
                     if len(batch) >= batch_size: write_batch()
-
                     pbar.update(1)
         
         write_batch()  # write out any remaining files (may be < batch_size)
         if delete_jsonls: remove(curr_jsonl)
     
-    write_batch()  # write out last remaining files
+    write_batch()
 
 
 def process_title(title: str):
