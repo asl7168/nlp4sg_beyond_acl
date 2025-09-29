@@ -244,7 +244,7 @@ def extract_from_papers(batch_size: int = 5000, start: int = 0, end: int = 30, d
                         if prefix == "corpusid":
                             curr_corpusid = str(value)  # store the CorpusID
                         elif prefix == "externalids.ACL":
-                            curr_is_acl = True
+                            curr_is_acl = True if value else False
                             break
                         else: 
                             continue 
