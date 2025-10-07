@@ -1,5 +1,5 @@
 from paths import *
-from credentials import headers
+from credentials import headers, mailto
 
 from os.path import exists
 from os import mkdir, makedirs, remove
@@ -35,17 +35,21 @@ def download_s2orc(call_extract: bool = False, extract_works: bool = True, delet
     """
     if not exists(s2orc_path): mkdir(s2orc_path)
 
-    # while 'latest'was previously the release used, datasets after 2024-01-02 seem off-spec -- 
+    # while 'latest' was previously the release used, datasets after 2024-01-02 seem off-spec -- 
     # i.e. rather than there being 30 files, there are ~200-500. unclear what the cause of 
     # this is, but for now, we're relegating ourselves to using the older version, since 
     # this is presumably an issue on SemanticScholar's end
     s2orc = "https://api.semanticscholar.org/datasets/v1/release/2024-01-02/dataset/s2orc"
     db_files = requests.get(s2orc, headers=headers).json()["files"]
-    for i in tqdm(range(len(db_files)), desc="Downloading S2ORC"):
-        s2orc_jsonl = f"{s2orc_path}/s2orc-{i}.jsonl"
-        s2orc_gz = s2orc_jsonl + ".gz"
-        if not (exists(s2orc_jsonl) or exists(s2orc_gz)):
-           urlretrieve(db_files[i], s2orc_gz)
+    
+    with tqdm(range(len(db_files)), desc="Downloading S2ORC") as pbar:
+        for i in pbar:
+            s2orc_jsonl = f"{s2orc_path}/s2orc-{i}.jsonl"
+            s2orc_gz = s2orc_jsonl + ".gz"
+            if not (exists(s2orc_jsonl) or exists(s2orc_gz)):
+                urlretrieve(db_files[i], s2orc_gz)
+            
+            pbar.update(1)
 
     with tqdm(glob.glob(f"{s2orc_path}/*.gz"), leave=False, desc="Gunzipping S2ORC") as pbar:
         for f in pbar:  
@@ -325,7 +329,7 @@ def load_completed_openalex_ids():
     return found_ids, unfound_ids
 
 
-def get_openalex_info(mailto: str = "", verbose: bool = False, start: int = 0, end: int = 10000,
+def get_openalex_info(mailto: str = mailto, verbose: bool = False, start: int = 0, end: int = 10000,
                       use_all_completed: bool = False, get_ids_from_s2orc: bool = True):
     """Loop through every paper exctracted from S2ORC and/or Papers, matching it to its OpenAlex
     equivalent. Create a file W{OpenAlexID}.json for each, which contains the found OpenAlex 
@@ -351,7 +355,7 @@ def get_openalex_info(mailto: str = "", verbose: bool = False, start: int = 0, e
     found_ids_filepath = f"{datasets_path}/openalex_found_{start}-{end}.txt"
     unfound_ids_filepath = f"{datasets_path}/openalex_unfound_{start}-{end}.txt"
 
-    if use_all_completed:
+    if use_all_completed:  # TODO: this doesn't really do what the docstring says; remove the function argument
         found_ids, unfound_ids = load_completed_openalex_ids()
     else:
         if not exists(found_ids_filepath):
@@ -373,8 +377,10 @@ def get_openalex_info(mailto: str = "", verbose: bool = False, start: int = 0, e
             f.write(f"{unfound_corpus_id}\n")
             unfound_ids.add(unfound_corpus_id)
         
+        # create a blank file at unfound_corpus_id identifying that the paper could not be found in OpenAlex
+        # TODO: this file might stick around even if, somehow, the paper is found via S2ORC stuff rather than Paper?
+        #       somewhat unlikely edge case since S2ORC info should always = Papers, but possible
         paper_path = f"{sub_a if is_acl else sub_c}/{unfound_corpus_id[:4]}/{unfound_corpus_id}/NOT_IN_OPENALEX"
-        
         with open(paper_path, 'w') as f: pass
 
     endpoint = "https://api.openalex.org/works"
@@ -500,12 +506,12 @@ def get_openalex_info(mailto: str = "", verbose: bool = False, start: int = 0, e
                     del batches[identifier][remove]
 
         result_items = tqdm(results_dict.items(), desc=f"Writing OpenAlex files ({identifier})", leave=False)
-        for corpus_id, open_alex_result in result_items:
-            openalex_id = open_alex_result["id"][21:]
-            paper_path = f"{sub_a if is_acl else sub_c }/{corpus_id[:4]}/{corpus_id}/{openalex_id}.json"
+        for corpus_id, r in result_items:
+            openalex_id = r["id"][21:]
+            paper_path = f"{sub_a if r['isACL'] else sub_c }/{corpus_id[:4]}/{corpus_id}/{openalex_id}.json"
             
             with open(paper_path, "w") as f:
-                json.dump(open_alex_result, f, indent=4)
+                json.dump(r, f, indent=4)
             
             with open(found_ids_filepath, 'a') as f:
                 f.write(f"{corpus_id}\n")
@@ -685,11 +691,17 @@ def get_openalex_info(mailto: str = "", verbose: bool = False, start: int = 0, e
             papers = glob.iglob(f"{subcorpus}/{subdir}/*/*.json")
             
             for paper in papers:
-                # if not running from clean, avoid OpenAlex results and full extracted S2ORC papers
-                if "W" in paper or "s2orc" in paper: continue  
+                # normalize paper path, i.e. replace \ with / 
+                paper = paper.replace("\\", "/")
+
+                # for now, only work with Papers papers (i.e. skip OpenAlex and S2ORC papers)
+                if "W" in paper or "s2orc" in paper: 
+                    pbar.update(1)
+                    continue  
                 
                 # if the OpenAlex data has already been found/failed, skip
-                curr_corpusid = paper.split("/")[-2]
+                curr_corpusid = paper.split("/")[-2] 
+
                 if curr_corpusid in found_ids or curr_corpusid in unfound_ids:
                     pbar.update(1)
                     continue                
@@ -713,10 +725,12 @@ def get_openalex_info(mailto: str = "", verbose: bool = False, start: int = 0, e
                 pbar.update(1)
 
             if get_ids_from_s2orc:
-                # Next, loop through S2ORC papers that didn't have a matching entry in Papers
+                # next, loop through S2ORC papers that didn't have a matching entry in Papers
                 s2orc_papers = glob.iglob(f"{subcorpus}/{subdir}/*/s2orc-*.json")
                 for paper in s2orc_papers:
+                    paper = paper.replace("\\", "/")
                     curr_corpusid = paper.split("/")[-2]
+
                     if curr_corpusid in found_ids or curr_corpusid in unfound_ids:
                         pbar.update(1)
                         continue
