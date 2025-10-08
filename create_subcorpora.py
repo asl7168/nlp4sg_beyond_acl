@@ -471,7 +471,7 @@ def get_openalex_info(mailto: str = mailto, verbose: bool = False, start: int = 
                         if verbose: tqdm.write('Starting a while loop')
                         try:
                             results = requests.get(endpoint, params=params)
-                            tqdm.write(f"{results.request.url}")
+                            # tqdm.write(f"{results.request.url}")
                             results = results.json()
                             if 'error' in results.keys(): tqdm.write(f"error in openalex results: {results['error']} \nmessage: {results['message']}")
                         except:
