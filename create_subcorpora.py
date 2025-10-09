@@ -872,7 +872,7 @@ def extract_author_ids(f):
             break
     return authors
 
-def get_paper_dirs(corpora_path: str = corpora_path, datasets_path: str = datasets_path):
+def get_paper_dirs():
     with open(f"{datasets_path}/acl_corpusids.txt") as f:
         acl_corpusids = {l.strip() for l in tqdm(f)}
     with open(f"{datasets_path}/non_acl_corpusids.txt") as f:
@@ -898,7 +898,7 @@ def get_file_paths_multiprocessing(directories):
         results = pool.map(get_openalex_files, directories)
     return [file for sublist in results for file in sublist]
 
-def write_openalex_filepaths(datasets_path: str = datasets_path):
+def write_openalex_filepaths():
     paper_dirs = get_paper_dirs()
     print('Got dirs')
     oa_paths = get_file_paths_multiprocessing(paper_dirs)
@@ -908,7 +908,7 @@ def write_openalex_filepaths(datasets_path: str = datasets_path):
             f.write(path + '\n')
 
 
-def extract_authors_2(corpora_path: str = corpora_path, datasets_path: str = datasets_path):
+def extract_authors_2():
     from multiprocessing import Pool
             
     def load_openalex_paths(subcorpus):
