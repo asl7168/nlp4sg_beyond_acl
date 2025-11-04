@@ -1,3 +1,7 @@
+#####################
+# Use classifier from Adauto et al. (2023) to classify NLP papers as "NLP4SG" or "Not NLP4SG"
+#####################
+
 import torch
 from datasets import load_dataset
 from transformers import AutoModelForSequenceClassification,AutoTokenizer,pipeline
@@ -56,7 +60,7 @@ def main(dataset):
     return labels, scores
 
 if __name__ == '__main__':
-    corpus_path = '/projects/p31502/data_allocation/corpora/comp_ling_meta/datasets/csvs/papers_merged_nlporacl_abstracts.csv'
+    corpus_path = '<insert>.csv'
     preds, scores = main(corpus_path)
     df = pd.read_csv(corpus_path)
     df['nlp4sg_label'] = preds

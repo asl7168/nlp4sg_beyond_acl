@@ -1,3 +1,7 @@
+#####################
+# Predict UN Sustainable Development Goals associated with NLP4SG papers
+#####################
+
 import csv, os, sys, openai, argparse, torch
 import pandas as pd
 import numpy as np
@@ -130,7 +134,7 @@ def load_data(dataset_path):
 
 def main(args):
     data=load_data("./nlp4sg_results_task_1.csv")
-    model=OpenAIModel(args['model']).
+    model=OpenAIModel(args['model'])
     with open("results_task_2.csv", 'w', newline='') as file:
         csv_writer = csv.writer(file)
         cols=['ID', 'title', 'abstract', 'text', 'year', 'nlp4sg_score']
