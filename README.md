@@ -1,12 +1,14 @@
 # Overview 
-1. **corpus creation** -> code used to create the dataset of NLP papers
-    - insert
-    - insert
+1. **corpus creation** 
+    - ``create_subcorpora.py``:
+    - ``csv_builder.py``:
+    - ``paths.py``:
+    - ``testing.py``:
 2. **NLP4SG classification** 
     - ```nlp4sg_task1.py```: implements classifier from Adauto et al. (2023) to classify NLP papers as social-good focused or not
     - ```nlp4sg_task2.py```: predicts UN Social Development Category for NLP papers classified as NLP4SG
 
-3. **datasets**
+3. **data**
     - ``main_dataset.csv``: our primary results file, including the following information for each paper
         * Semantic Scholar Corpus ID
         * OpenAlex Work ID
