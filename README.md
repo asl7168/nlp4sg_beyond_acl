@@ -1,4 +1,24 @@
-# Understanding the Dataset
+# Overview 
+1. **corpus creation** -> code used to create the dataset of NLP papers
+    - insert
+    - insert
+2. **NLP4SG classification** 
+    - ```nlp4sg_task1.py```: implements classifier from Adauto et al. (2023) to classify NLP papers as social-good focused or not
+    - ```nlp4sg_task2.py```: predicts UN Social Development Category for NLP papers classified as NLP4SG
+
+3. **datasets**
+    - ``main_dataset.csv``: our primary results file, including the following information for each paper
+        Semantic Scholar Corpus ID
+        OpenAlex Work ID
+        Title
+        Venue Name
+        Publication Year
+        Venue Type (ACL, ACL-ADJACENT, or EXTERNAL)
+        Author Type (ACL or non-ACL)
+        NLP4SG Label (NLP4SG or Not NLP4SG)
+    - ``GoogleScholar_venue_info.csv``: Google Scholar categories and subcategories for venues in ``main_dataset.csv``
+
+# The Corpus Creation Process
 1. S2ORC and Papers datasets are downloaded from Semantic Scholar
 2. Files are sorted based on whether they are "ACL" (i.e. published at an ACL or associated venue) or "non-ACL"
 3. Matching metadata for *all* extracted works (where possible) are found in OpenAlex
@@ -27,7 +47,7 @@ An example target ACL work with CorpusID 123499 would be stored as follows:
 
 Author profiles are stored separately from their works, instead containing sets of their ACL and non-ACL works. 
 
-# Creating the Dataset
+# Recreating the Corpus
 A user attempting to recreate the dataset from scratch will need access to:
 -  ~TODO GB of storage space (for the smallest possible version); 
 - A [Semantic Scholar API Key](https://www.semanticscholar.org/product/api)
