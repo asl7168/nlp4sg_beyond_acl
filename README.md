@@ -8,14 +8,14 @@
 
 3. **datasets**
     - ``main_dataset.csv``: our primary results file, including the following information for each paper
-        Semantic Scholar Corpus ID
-        OpenAlex Work ID
-        Title
-        Venue Name
-        Publication Year
-        Venue Type (ACL, ACL-ADJACENT, or EXTERNAL)
-        Author Type (ACL or non-ACL)
-        NLP4SG Label (NLP4SG or Not NLP4SG)
+        * Semantic Scholar Corpus ID
+        * OpenAlex Work ID
+        * Title
+        * Venue Name
+        * Publication Year
+        * Venue Type (ACL, ACL-ADJACENT, or EXTERNAL)
+        * Author Type (ACL or non-ACL)
+        * NLP4SG Label (NLP4SG or Not NLP4SG)
     - ``GoogleScholar_venue_info.csv``: Google Scholar categories and subcategories for venues in ``main_dataset.csv``
 
 # The Corpus Creation Process
