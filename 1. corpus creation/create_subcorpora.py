@@ -326,6 +326,7 @@ def get_openalex_info(mailto: str = mailto, verbose: bool = False, start: int = 
         verbose (bool): 
         start (int): the subdirectory to begin with (first four digits of CorpusID; for job segmentation)
         end (int): the subdirectory to end with
+        get_ids_from_s2orc (bool): whether to use CorpusIDs from S2ORC works that didn't have a match in Papers
     
     Returns 
     ----------

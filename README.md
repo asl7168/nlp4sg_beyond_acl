@@ -28,7 +28,8 @@
 1. S2ORC and Papers datasets are downloaded from Semantic Scholar
 2. Files are sorted based on whether they are "ACL" (i.e. published at an ACL or associated venue) or "non-ACL"
 3. Matching metadata for *all* extracted works (where possible) are found in OpenAlex
-4. Author files are created based on the downloaded OpenAlex data
+4. Author files are created based on the downloaded OpenAlex data, then stored in a CSV together
+5. After paths to all OpenAelx W*.json files are created, use those files to create a dataset CSV
 
 All work-related files (S2ORC, Papers, and OpenAlex) are stored together within sub_a (for ACL files) or sub_c (non-ACL). Works are grouped by the first four digits of their Semantic Scholar CorpusID, which are used to create a directory that itself contains all works whose CorpusIDs begin with those four digits. Each CorpusID gets its own directory within the appropriate grouping directory; and it is this directory that contains the associated S2ORC, Papers, and OpenAlex files for a given work. 
 
@@ -61,10 +62,10 @@ A user attempting to recreate the dataset from scratch will need access to:
 
 We recommend the defaults provided for each function; the dataset is quite large, so users attempting to recreate the dataset should ensure that their computer (or allocation on a cluster) has adequate space to store files -- especially when non-destructive function parameters are set (i.e. when the JSONL files are not deleted post-extraction). 
 
-A user with adequate space for JSONL and extracted S2ORC files will be advantaged by running multiple function calls simultaneously, either in multiple terminals or through their cluster's job system. Example Slurm scripts can be found in the [examples](examples/) directory of this repository.
+A user with adequate space for JSONL and extracted S2ORC files will be advantaged by running multiple function calls simultaneously, either in multiple terminals or through their cluster's job system. Example SLURM scripts can be found in the [examples](1.%20corpus%20creation/examples/) directory of this repository.
 
 
-An example recipe for a space-limited user might look as follows: 
+An example recipe for a space-limited user without some kind of cluster access might look as follows: 
 
 ```python
 from create_subcorpora import * 
@@ -79,5 +80,4 @@ if __name__ == "__main__":
 
     make_author_csv()  # creates a CSV containing all authors and their works
     csv_builder()  # can be done in multiple steps; but as an example, can be done in one go -- though will take longer than batching
-
 ```
