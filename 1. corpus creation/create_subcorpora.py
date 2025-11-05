@@ -2,7 +2,7 @@ from paths import *
 from credentials import headers, mailto
 
 from os.path import exists
-from os import mkdir, makedirs, remove
+from os import mkdir, makedirs, remove, walk
 import requests
 from tqdm import tqdm 
 from urllib.request import urlretrieve as urlretrieve
@@ -70,14 +70,14 @@ def download_s2orc(call_extract: bool = False, extract_works: bool = True, delet
             pbar.update(1)
 
 
-def download_s2_papers(call_get: bool = False, delete_jsonls: bool = False):
+def download_s2_papers(call_extract: bool = False, delete_jsonls: bool = False):
     """Downloads and gunzips the Semantic Scholar 'Papers' JSONL files.
 
     Parameters
     ----------
-        call_get (bool): whether to extract metadata from gunzipped JSONLs now, rather than
-                         calling extract_from_papers later; significantly increases function 
-                         runtime
+        call_extract (bool): whether to extract metadata from gunzipped JSONLs now, rather than
+                             calling extract_from_papers later; significantly increases function 
+                             runtime
         delete_jsonls (bool): see extract_from_papers
 
     Returns
@@ -104,7 +104,7 @@ def download_s2_papers(call_get: bool = False, delete_jsonls: bool = False):
             pbar.set_description(f"Deleting {f}")
             remove(f)  # once .gz file is gunzipped, delete it
 
-            if call_get:
+            if call_extract:
                 pbar.set_description(f"Extracting {f}")
                 papers_num = int(f.split("-")[-1].split(".")[0])
                 extract_from_papers(start=papers_num, end=papers_num + 1, delete_jsonls=delete_jsonls)
@@ -311,26 +311,8 @@ def process_title(title: str):
     return w
 
 
-def load_completed_openalex_ids():
-    found_ids = set()
-    found_filepaths = glob.glob(f"{datasets_path}/openalex_found_*.txt")
-    for path in tqdm(found_filepaths):
-        with open(path) as f:
-            for line in f:
-                found_ids.add(line.strip())
-    
-    unfound_ids = set()
-    unfound_filepaths = glob.glob(f"{datasets_path}/openalex_unfound_*.txt")
-    for path in tqdm(unfound_filepaths):
-        with open(path) as f:
-            for line in f:
-                unfound_ids.add(line.strip())
-
-    return found_ids, unfound_ids
-
-
 def get_openalex_info(mailto: str = mailto, verbose: bool = False, start: int = 0, end: int = 10000,
-                      use_all_completed: bool = False, get_ids_from_s2orc: bool = True):
+                      get_ids_from_s2orc: bool = True):
     """Loop through every paper exctracted from S2ORC and/or Papers, matching it to its OpenAlex
     equivalent. Create a file W{OpenAlexID}.json for each, which contains the found OpenAlex 
     metadata.
@@ -344,8 +326,6 @@ def get_openalex_info(mailto: str = mailto, verbose: bool = False, start: int = 
         verbose (bool): 
         start (int): the subdirectory to begin with (first four digits of CorpusID; for job segmentation)
         end (int): the subdirectory to end with
-        use_all_completed (bool): whether to load all found+unfound CorpusIDs, rather than
-                                  only those in range(start, end)
     
     Returns 
     ----------
@@ -355,22 +335,19 @@ def get_openalex_info(mailto: str = mailto, verbose: bool = False, start: int = 
     found_ids_filepath = f"{datasets_path}/openalex_found_{start}-{end}.txt"
     unfound_ids_filepath = f"{datasets_path}/openalex_unfound_{start}-{end}.txt"
 
-    if use_all_completed:  # TODO: this doesn't really do what the docstring says; remove the function argument
-        found_ids, unfound_ids = load_completed_openalex_ids()
+    if not exists(found_ids_filepath):
+        with open(found_ids_filepath, 'w') as f:
+            found_ids = set()
     else:
-        if not exists(found_ids_filepath):
-            with open(found_ids_filepath, 'w') as f:
-                found_ids = set()
-        else:
-            with open(found_ids_filepath) as f:
-                found_ids = {line.strip() for line in f}
+        with open(found_ids_filepath) as f:
+            found_ids = {line.strip() for line in f}
 
-        if not exists(unfound_ids_filepath):
-            with open(unfound_ids_filepath, 'w') as f:
-                unfound_ids = set()
-        else:
-            with open(unfound_ids_filepath) as f:
-                unfound_ids = {line.strip() for line in f}
+    if not exists(unfound_ids_filepath):
+        with open(unfound_ids_filepath, 'w') as f:
+            unfound_ids = set()
+    else:
+        with open(unfound_ids_filepath) as f:
+            unfound_ids = {line.strip() for line in f}
 
     def write_unfound(unfound_corpus_id):  # add a new CorpusID to unfound_ids
         with open(unfound_ids_filepath, 'a') as f:
@@ -800,6 +777,7 @@ def extract_authors():
     
     papers = glob.iglob(f"{corpora_path}/subcorpus_*/*/*/W*.json")  
     for paper in tqdm(papers, total=11000000, desc="Extracting authors from all papers"):
+        paper = paper.replace("\\", "/")
         paper_split = paper.split('/')
         corpus_id = paper_split[-2]
 
@@ -847,6 +825,25 @@ def extract_authors():
         seen_papers.add(corpus_id)
         with open(seen_papers_filepath, "a") as f:
             f.write(f"{corpus_id}\n")
+    
+
+def write_openalex_filepaths():
+    openalex_paths = f"{datasets_path}/openalex_paths.txt"
+
+    with open(openalex_paths, "a") as f:
+        for sub in [sub_a, sub_c]:
+            for dir, _, files in walk(sub): 
+                for filename in files: 
+                    if filename[0] == "W":
+                        f.write(dir.replace("\\", "/") + "/" + filename + "\n")
+
+
+
+    # oa_paths = get_file_paths_multiprocessing(paper_dirs)
+    # print('Got all paths to OpenAlex works')
+    # with open(f"{datasets_path}/openalex_paths.txt", 'a') as f:
+    #     for path in oa_paths:
+    #         f.write(path + '\n')
 
 ### ----------
 ### MULTIPROCESSING CODE BELOW THIS POINT: EXPERIMENTAL, BUT PREVIOUSLY FUNCTIONAL
@@ -871,42 +868,6 @@ def extract_author_ids(f):
         if prefix == 'countries_distinct_count':
             break
     return authors
-
-def get_paper_dirs():
-    with open(f"{datasets_path}/acl_corpusids.txt") as f:
-        acl_corpusids = {l.strip() for l in tqdm(f)}
-    with open(f"{datasets_path}/non_acl_corpusids.txt") as f:
-        non_acl_corpusids = {l.strip() for l in tqdm(f)}
-    all_corpusids = acl_corpusids | non_acl_corpusids
-
-    paper_dirs = []
-    for id in tqdm(all_corpusids, desc='Making paths to paper dirs'):
-        path = f"{corpora_path}/"
-        path += 'subcorpus_a/' if id in acl_corpusids else 'subcorpus_c/'
-        path += f"{id[:4]}/{id}"
-        paper_dirs.append(path)
-
-    return paper_dirs
-
-def get_openalex_files(directory):
-    print('.', end='')
-    return glob.glob(f"{directory}/W*.json")
-
-def get_file_paths_multiprocessing(directories):
-    from multiprocessing import Pool
-    with Pool() as pool:
-        results = pool.map(get_openalex_files, directories)
-    return [file for sublist in results for file in sublist]
-
-def write_openalex_filepaths():
-    paper_dirs = get_paper_dirs()
-    print('Got dirs')
-    oa_paths = get_file_paths_multiprocessing(paper_dirs)
-    print('Got oa paths')
-    with open(f"{datasets_path}/openalex_paths.txt", 'a') as f:
-        for path in oa_paths:
-            f.write(path + '\n')
-
 
 def extract_authors_2():
     from multiprocessing import Pool

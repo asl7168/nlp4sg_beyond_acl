@@ -1,9 +1,11 @@
 # Overview 
+0. **conda env**
+    - ``environment.yml``: contains all dependencies from which an nlp4sg conda environment should be created
 1. **corpus creation** 
-    - ``create_subcorpora.py``:
-    - ``csv_builder.py``:
-    - ``paths.py``:
-    - ``testing.py``:
+    - ``create_subcorpora.py``: contains functions that download Semantic Scholar and OpenAlex files, organizing and cleaning data throughout
+    - ``csv_builder.py``: builds a full results CSV from the `create_subcorpora` dataset
+    - ``paths.py``: contains preset paths utilized by `create_subcorpora` and `csv_builder` functions; NOTE: the user **must set corpora_path** for their personal machine
+    - ``credentials.py``: contains the user's Semantic Scholar and OpenAlex API credentials; NOTE: the user **must provide their own Semantic Scholar API key and OpenAlex mailto address**
 2. **NLP4SG classification** 
     - ```nlp4sg_task1.py```: implements classifier from Adauto et al. (2023) to classify NLP papers as social-good focused or not
     - ```nlp4sg_task2.py```: predicts UN Social Development Category for NLP papers classified as NLP4SG
@@ -51,7 +53,7 @@ Author profiles are stored separately from their works, instead containing sets 
 
 # Recreating the Corpus
 A user attempting to recreate the dataset from scratch will need access to:
--  ~TODO GB of storage space (for the smallest possible version); 
+-  At *least* TODO GB of storage space (for the smallest possible version); 
 - A [Semantic Scholar API Key](https://www.semanticscholar.org/product/api)
 - An [OpenAlex API Key](https://docs.openalex.org/how-to-use-the-api/rate-limits-and-authentication), for efficient API calls (Premium or Educator access required for the current version of the code)
 
@@ -60,17 +62,20 @@ We recommend the defaults provided for each function; the dataset is quite large
 A user with adequate space for JSONL and extracted S2ORC files will be advantaged by running multiple function calls simultaneously, either in multiple terminals or through their cluster's job system. Example Slurm scripts can be found in the [examples](examples/) folder of this repository.
 
 
-An example recipe for a space-limited user might look as follows:  # TODO: maybe move this to the examples folder, too?
+An example recipe for a space-limited user might look as follows: 
 
 ```python
-# TODO: finish this example 
-
 from create_subcorpora import * 
+from csv_builder import * 
 
 if __name__ == "__main__":
     download_s2orc(True, False, True)  # calls extract_from_s2orc; does not save full S2ORC work bodies (i.e. full paper texts, etc.); deletes JSONL files after extraction complete
     download_s2_papers(True, True)  # as above, but does make Papers metadata files contentful (as this is a critical step in building the corpus)
     get_openalex_info(get_ids_from_s2orc=False)  # matches works to their OpenAlex metadata, but does not attempt to utilize CorpusIDs only present in S2ORC files (since they were not saved)
     extract_authors()  # creates author profiles for all authors in OpenAlex metadata files
-    csv_builder()  # TODO: decide if the typical user should make multiple and then merge_csv or not
+    write_openalex_filepaths()  # creates a .txt file containing paths to all W*.json files
+
+    make_author_csv()  # creates a CSV containing all authors and their works
+    csv_builder()  # can be done in multiple steps; but as an example, can be done in one go -- though will take longer than batching
+
 ```

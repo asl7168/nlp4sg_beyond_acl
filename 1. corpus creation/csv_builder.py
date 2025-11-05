@@ -28,6 +28,8 @@ def process_author_file(path):
     ----------
         dict: JSONKey:JSONvalue
     """
+    path = path.replace("\\", "/")
+    
     with open(path) as f:
         j = json.load(f)
     
@@ -93,7 +95,7 @@ def csv_builder(threshold: float = 0.0, start: int = 0, end: int = 10000, batch_
         openalex_paths = {l.strip() for l in tqdm(f, desc='loading openalex paths')}
         openalex_works_dict = {}
 
-        for path in tqdm(openalex_paths,desc='sorting openalex paths'):
+        for path in tqdm(openalex_paths, desc='sorting openalex paths'):
             subdir = path.split('/')[-3]  # four-digit CorpusID substring
             
             if subdir in openalex_works_dict:
@@ -104,16 +106,18 @@ def csv_builder(threshold: float = 0.0, start: int = 0, end: int = 10000, batch_
         del openalex_paths  # remove file from memory
 
     for subdir in subdirs:
-        subdirs.set_description(f"Looping through {subdir}/ in all subcorpuses")
+        subdirs.set_description(f"Looping through {subdir}/ in all subcorpora")
         batch = []
         
+        num_works = 0  # display total number of works to be processed for the subdir
+
+        if exists(f"{sub_a}/{subdir}"): num_works += len(listdir(f"{sub_a}/{subdir}/"))
+        elif exists(f"{sub_c}/{subdir}"): num_works += len(listdir(f"{sub_c}/{subdir}/"))
+        else: continue  # if subdir doesn't exist, skip it
+
         if subdir not in openalex_works_dict: continue  # if subdir doesn't exist, skip it
         
         works = openalex_works_dict[subdir]  # OpenAlex files present for subdir in either sub_a or sub_c
-        
-        num_works = 0  # display total number of works to be processed for the subdir
-        if exists(f"{sub_a}/{subdir}/"): num_works += len(listdir(f"{sub_a}/{subdir}/"))
-        if exists(f"{sub_c}/{subdir}/"): num_works += len(listdir(f"{sub_c}/{subdir}/"))
         pbar = tqdm(total=num_works, leave=False)
 
         for work in works:
@@ -140,7 +144,11 @@ def csv_builder(threshold: float = 0.0, start: int = 0, end: int = 10000, batch_
                             author_id = value.split("/")[-1]
                             work_row["author_ids"].append(author_id)
 
-                            acl_contribs = len(literal_eval(author_df.loc[int(author_id[1:])]['acl_papers']))
+                            try: 
+                                acl_contribs = len(literal_eval(author_df.loc[int(author_id[1:])]['acl_papers']))
+                            except KeyError:  # if, somehow, the author was not put in the author_df
+                                acl_contribs = -1
+
                             # store number of ACL contribs from the author who has most contributed to ACL
                             work_row["max_acl_contribs"] = max(work_row["max_acl_contribs"], acl_contribs)  
                         case "concepts.item.id": 

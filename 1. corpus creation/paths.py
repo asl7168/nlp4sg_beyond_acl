@@ -3,11 +3,10 @@
 # all others paths rely on it). Otherwise, custom filepaths are untested
 
 # main directory, in which datasets are downloaded and subcorpora are built
-# corpora_path = "/projects/b1170/corpora/comp_ling_meta"
-corpora_path = "C:/Users/Adam/Desktop/CoLLaB/NLP4SG/CORPUS"
+corpora_path = "USER MUST SET ME"
 
 datasets_path = f"{corpora_path}/datasets"  # where datasets are stored
-authors_path = f"{corpora_path}/authors"  # ---
+authors_path = f"{corpora_path}/authors"  # where OpenAlex author profiles are stored
 
 # https://api.semanticscholar.org/api-docs/datasets
 s2orc_path = f"{datasets_path}/s2orc"  # full text, abstracts, etc.
@@ -16,5 +15,4 @@ csvs_path = f"{datasets_path}/csvs"  # results/data CSVs
 
 # subcorpora created by create_subcorpora.py
 sub_a = f"{corpora_path}/subcorpus_a"  # where ACL files are stored
-sub_b = f"{corpora_path}/subcorpus_b"  # ---
-sub_c = f"{corpora_path}/subcorpus_c"  # ---
+sub_c = f"{corpora_path}/subcorpus_c"  # where non-ACL files are stored
