@@ -1,11 +1,13 @@
 # Overview 
-0. **conda env**
-    - ``environment.yml``: contains all dependencies from which an nlp4sg conda environment should be created
+``environment.yml``: contains all dependencies from which an nlp4sg conda environment should be created
+
 1. **corpus creation** 
     - ``create_subcorpora.py``: contains functions that download Semantic Scholar and OpenAlex files, organizing and cleaning data throughout
     - ``csv_builder.py``: builds a full results CSV from the `create_subcorpora` dataset
     - ``paths.py``: contains preset paths utilized by `create_subcorpora` and `csv_builder` functions; NOTE: the user **must set corpora_path** for their personal machine
     - ``credentials.py``: contains the user's Semantic Scholar and OpenAlex API credentials; NOTE: the user **must provide their own Semantic Scholar API key and OpenAlex mailto address**
+    - ``examples``: sample scripts for a SLURM cluster; based on those used to generate the provided dataset
+  
 2. **NLP4SG classification** 
     - ```nlp4sg_task1.py```: implements classifier from Adauto et al. (2023) to classify NLP papers as social-good focused or not
     - ```nlp4sg_task2.py```: predicts UN Social Development Category for NLP papers classified as NLP4SG
@@ -59,7 +61,7 @@ A user attempting to recreate the dataset from scratch will need access to:
 
 We recommend the defaults provided for each function; the dataset is quite large, so users attempting to recreate the dataset should ensure that their computer (or allocation on a cluster) has adequate space to store files -- especially when non-destructive function parameters are set (i.e. when the JSONL files are not deleted post-extraction). 
 
-A user with adequate space for JSONL and extracted S2ORC files will be advantaged by running multiple function calls simultaneously, either in multiple terminals or through their cluster's job system. Example Slurm scripts can be found in the [examples](examples/) folder of this repository.
+A user with adequate space for JSONL and extracted S2ORC files will be advantaged by running multiple function calls simultaneously, either in multiple terminals or through their cluster's job system. Example Slurm scripts can be found in the [examples](examples/) directory of this repository.
 
 
 An example recipe for a space-limited user might look as follows: 
