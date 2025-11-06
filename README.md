@@ -29,7 +29,7 @@
 2. Files are sorted based on whether they are "ACL" (i.e. published at an ACL or associated venue) or "non-ACL"
 3. Matching metadata for *all* extracted works (where possible) are found in OpenAlex
 4. Author files are created based on the downloaded OpenAlex data, then stored in a CSV together
-5. After paths to all OpenAelx W*.json files are created, use those files to create a dataset CSV
+5. After paths to all OpenAlex W*.json files are created, use those files to create a dataset CSV
 
 All work-related files (S2ORC, Papers, and OpenAlex) are stored together within sub_a (for ACL files) or sub_c (non-ACL). Works are grouped by the first four digits of their Semantic Scholar CorpusID, which are used to create a directory that itself contains all works whose CorpusIDs begin with those four digits. Each CorpusID gets its own directory within the appropriate grouping directory; and it is this directory that contains the associated S2ORC, Papers, and OpenAlex files for a given work. 
 
