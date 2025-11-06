@@ -56,8 +56,8 @@ Author profiles are stored separately from their works, instead containing sets 
 
 # Recreating the Corpus
 A user attempting to recreate the dataset from scratch will need access to:
--  At *least* TODO GB of storage space (for the smallest possible version); 
-- A [Semantic Scholar API Key](https://www.semanticscholar.org/product/api)
+- A significant amount of storage space; at least 3-4TB if not deleting large Semantic Scholar files until extraction complete, significantly less otherwise
+- A [Semantic Scholar API Key](https://www.semanticscholar.org/product/api); and 
 - An [OpenAlex API Key](https://docs.openalex.org/how-to-use-the-api/rate-limits-and-authentication), for efficient API calls (Premium or Educator access required for the current version of the code)
 
 We recommend the defaults provided for each function; the dataset is quite large, so users attempting to recreate the dataset should ensure that their computer (or allocation on a cluster) has adequate space to store files -- especially when non-destructive function parameters are set (i.e. when the JSONL files are not deleted post-extraction). 
